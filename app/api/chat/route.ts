@@ -158,10 +158,89 @@ Use tools whenever the user asks about specific companies or financial data.`
         toolResult = { error: `Unknown tool: ${toolName}` };
     }
 
-    console.log("✅ Tool execution result:", toolResult);
+    console.log("✅ Raw tool execution result:", toolResult);
+    // =================================================================
+    // 2.5. POST-PROCESSOR: Make tool results synthesizer-friendly
+    // =================================================================
+    let processedToolResult = toolResult;
+
+    switch (toolName) {
+      case "resolveSymbol":
+        if (Array.isArray(toolResult) && toolResult.length > 0) {
+          const firstResult = toolResult[0];
+          processedToolResult = {
+            query: toolArgs.query,
+            found: true,
+            ticker: firstResult.symbol,
+            companyName: firstResult.name,
+            exchange: firstResult.exchange,
+            currency: firstResult.currency,
+            message: `Found ticker symbol: ${firstResult.symbol} for ${firstResult.name}`
+          };
+        } else if (Array.isArray(toolResult) && toolResult.length === 0) {
+          processedToolResult = {
+            query: toolArgs.query,
+            found: false,
+            message: `No ticker symbol found for "${toolArgs.query}"`
+          };
+        } else {
+          processedToolResult = {
+            query: toolArgs.query,
+            found: false,
+            error: "Unexpected response format",
+            rawResult: toolResult
+          };
+        }
+        break;
+        
+      case "getStatement":
+        if (Array.isArray(toolResult) && toolResult.length > 0) {
+          processedToolResult = {
+            symbol: toolArgs.symbol,
+            statementType: toolArgs.statement,
+            period: toolArgs.period || 'annual',
+            recordsFound: toolResult.length,
+            mostRecentPeriod: toolResult[0],
+            allPeriods: toolResult
+          };
+        } else {
+          processedToolResult = {
+            symbol: toolArgs.symbol,
+            statementType: toolArgs.statement,
+            error: "No financial statements found"
+          };
+        }
+        break;
+        
+      case "getQuote":
+        if (Array.isArray(toolResult) && toolResult.length > 0) {
+          const quote = toolResult[0];
+          processedToolResult = {
+            symbol: quote.symbol,
+            price: quote.price,
+            change: quote.change,
+            changesPercentage: quote.changesPercentage,
+            marketCap: quote.marketCap,
+            volume: quote.volume,
+            timestamp: quote.timestamp || new Date().toISOString()
+          };
+        } else {
+          processedToolResult = {
+            error: "No quote data found",
+            rawResult: toolResult
+          };
+        }
+        break;
+        
+      // Keep other tools as-is for now, add preprocessing as needed
+      default:
+        processedToolResult = toolResult;
+    }
+
+    console.log(`📝 Processed ${toolName} result:`, processedToolResult);
 
     // =================================================================
-    // 3. SYNTHESIZER: Respond to the user based on the tool's result
+    // 3. SYNTHESIZER: Respond to the user based on the processed result
     // =================================================================
     console.log("✍️ Step 3: Calling Synthesizer LLM...");
 
@@ -183,6 +262,8 @@ Use tools whenever the user asks about specific companies or financial data.`
         {
           role: "system",
           content: `You are a financial analyst. Answer the user's question using ONLY the data provided in the tool result.
+
+The tool result has been preprocessed to be clear and structured. 
 
 Rules:
 - Be concise and direct
