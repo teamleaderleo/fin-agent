@@ -91,7 +91,7 @@ This architecture ensures the application is not only functional but also clean,
 
 ## A Note on API Access and Citations
 
-This application was built using the Financial Modeling Prep (FMP) API key provided in the assignment brief. However, the citations were built using the Free-tier API key given on the demo page, which has certain limitations.
+This application was built using a private Financial Modeling Prep (FMP) API key. However, the citations were built using the Free-tier API key given on the demo page, which has certain limitations.
 
 **Therefore, while the citation links (`🔗`) in the chat interface are programmatically correct, they may not always resolve to a page with data.**
 
