@@ -359,8 +359,8 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
                     
                     const transcriptResult = await fmpClient.get("/earning-call-transcript", {
                       symbol: symbol,
-                      year: dateInfo.year ? dateInfo.year.toString() : dateInfo.year,
-                      quarter: dateInfo.quarter ? dateInfo.quarter.toString() : dateInfo.quarter
+                      year: (dateInfo.fiscalYear || dateInfo.year).toString(),
+                      quarter: dateInfo.quarter.toString()
                     });
                     
                     if (Array.isArray(transcriptResult) && transcriptResult.length > 0) {
