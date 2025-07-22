@@ -139,7 +139,7 @@ export async function POST(req: NextRequest) {
     const allToolsUsed: string[] = [];
     const reasoningTrace: any[] = [];
     let toolStepCounter = 0;
-    const maxSteps = 5; // Prevent infinite loops
+    const maxSteps = 12; // Prevent infinite loops
     
     for (let step = 0; step < maxSteps; step++) {
       console.log(`\n🧠 Step ${step + 1}: Planning next action...`);
