@@ -15,6 +15,8 @@ export default function ChatInterface() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [expandedReasoning, setExpandedReasoning] = useState<number | null>(null);
+  const [copiedReasoning, setCopiedReasoning] = useState<number | null>(null);
+  const [copiedMessage, setCopiedMessage] = useState<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -28,6 +30,50 @@ export default function ChatInterface() {
       inputRef.current?.focus();
     }
   }, [isLoading]);
+
+  const copyReasoning = async (messageIdx: number, reasoning: any[]) => {
+    try {
+      const reasoningText = reasoning.map((step, idx) => {
+        let text = `${step.step}. `;
+        if (step.type === 'tool_step') {
+          text += `🚀 ${step.toolName}\n`;
+          if (step.toolArgs) {
+            text += `${JSON.stringify(step.toolArgs, null, 2)}\n`;
+          }
+          if (step.result) {
+            text += `→ ${step.result.preview}\n`;
+          }
+        } else if (step.type === 'completion') {
+          text += `🏁 Finished\n`;
+          if (step.message) {
+            text += `${step.message}\n`;
+          }
+        }
+        return text;
+      }).join('\n');
+
+      await navigator.clipboard.writeText(reasoningText);
+      setCopiedReasoning(messageIdx);
+      setTimeout(() => setCopiedReasoning(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy reasoning:', err);
+    }
+  };
+
+  const copyMessage = async (messageIdx: number, content: string) => {
+    try {
+      // Strip HTML tags for plain text copy
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = content;
+      const plainText = tempDiv.textContent || tempDiv.innerText || '';
+      
+      await navigator.clipboard.writeText(plainText);
+      setCopiedMessage(messageIdx);
+      setTimeout(() => setCopiedMessage(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy message:', err);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -149,21 +195,32 @@ export default function ChatInterface() {
                 {msg.role === 'assistant' && msg.reasoning && msg.reasoning.length > 0 && (
                   <div className="bg-white/40 backdrop-blur-sm border border-gray-200/50 rounded-lg overflow-hidden">
                     {/* Clickable Header */}
-                    <div 
-                      onClick={() => setExpandedReasoning(expandedReasoning === idx ? null : idx)}
-                      className="cursor-pointer px-3 py-2 hover:bg-white/60 transition-all duration-200 select-none"
-                    >
+                    <div className="px-3 py-2 hover:bg-white/60 transition-all duration-200">
                       <div className="flex items-center justify-between text-sm text-gray-600">
-                        <div className="flex items-center gap-2">
+                        <div 
+                          onClick={() => setExpandedReasoning(expandedReasoning === idx ? null : idx)}
+                          className="flex items-center gap-2 cursor-pointer select-none flex-1"
+                        >
                           <span className="text-xs">🧠</span>
                           <span>Used {msg.stepCount} reasoning steps</span>
-                        </div>
-                        <div className="flex items-center gap-1">
                           <span className="text-xs text-gray-400">Click to expand</span>
                           <span className={`transform transition-transform text-gray-400 ${expandedReasoning === idx ? 'rotate-180' : ''}`}>
                             ▼
                           </span>
                         </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            copyReasoning(idx, msg.reasoning!);
+                          }}
+                          className="ml-2 px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded transition-colors flex items-center gap-1"
+                        >
+                          {copiedReasoning === idx ? (
+                            <>✓ Copied</>
+                          ) : (
+                            <>📋 Copy</>
+                          )}
+                        </button>
                       </div>
                     </div>
                     
@@ -206,11 +263,22 @@ export default function ChatInterface() {
                 )}
 
                 {/* Main Message Content */}
-                <div className={`rounded-2xl px-4 py-3 ${
+                <div className={`rounded-2xl px-4 py-3 relative ${
                   msg.role === 'user' 
                     ? 'bg-gray-800 text-white shadow-sm' 
                     : 'bg-white/60 backdrop-blur-sm border border-gray-200/50 text-gray-800 shadow-sm'
                 }`}>
+                  {/* Copy button for assistant messages */}
+                  {msg.role === 'assistant' && (
+                    <button
+                      onClick={() => copyMessage(idx, msg.content)}
+                      className="absolute top-2 right-2 p-1 text-xs bg-gray-100 hover:bg-gray-200 rounded transition-colors opacity-60 hover:opacity-100"
+                      title="Copy message"
+                    >
+                      {copiedMessage === idx ? '✓' : '📋'}
+                    </button>
+                  )}
+                  
                   <div 
                     className="whitespace-pre-wrap"
                     dangerouslySetInnerHTML={{ 
