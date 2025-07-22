@@ -268,17 +268,6 @@ export default function ChatInterface() {
                     ? 'bg-gray-800 text-white shadow-sm' 
                     : 'bg-white/60 backdrop-blur-sm border border-gray-200/50 text-gray-800 shadow-sm'
                 }`}>
-                  {/* Copy button for assistant messages */}
-                  {msg.role === 'assistant' && (
-                    <button
-                      onClick={() => copyMessage(idx, msg.content)}
-                      className="absolute top-2 right-2 p-1 text-xs bg-gray-100 hover:bg-gray-200 rounded transition-colors opacity-60 hover:opacity-100"
-                      title="Copy message"
-                    >
-                      {copiedMessage === idx ? '✓' : '📋'}
-                    </button>
-                  )}
-                  
                   <div 
                     className="whitespace-pre-wrap"
                     dangerouslySetInnerHTML={{ 
@@ -289,6 +278,17 @@ export default function ChatInterface() {
                     <div className="text-xs text-gray-500 mt-2 font-mono">
                       🔧 Used: {msg.toolUsed}
                     </div>
+                  )}
+                  
+                  {/* Copy button for assistant messages - bottom right */}
+                  {msg.role === 'assistant' && (
+                    <button
+                      onClick={() => copyMessage(idx, msg.content)}
+                      className="absolute bottom-2 right-2 p-1 text-xs bg-white/80 hover:bg-white rounded transition-colors opacity-60 hover:opacity-100 shadow-sm"
+                      title="Copy message"
+                    >
+                      {copiedMessage === idx ? '✓' : '📋 Copy'}
+                    </button>
                   )}
                 </div>
               </div>
