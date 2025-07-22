@@ -1,10 +1,10 @@
 # fin-agent 🤖
 
-An intelligent financial research assistant powered by a multi-step AI agent built with Next.js and the OpenAI API. Ask complex financial questions, get detailed answers, and see the AI's reasoning every step of the way.
+A financial research assistant powered by a multi-step AI agent built with Next.js and the OpenAI API. Ask complex financial questions, get detailed answers, and see the AI's reasoning every step of the way.
 
-**Live Demo:** 
+**Live Demo:** https://fin-agent-one.vercel.app/
 
-![fin-agent-showcase](https://user-images.githubusercontent.com/your-username/your-repo/assets/placeholder.gif)
+![fin-agent-showcase](https://github.com/user-attachments/assets/3dfc5ed2-0390-4798-94d0-c83623155d61)
 
 ## ✨ Core Features
 
@@ -23,11 +23,11 @@ An intelligent financial research assistant powered by a multi-step AI agent bui
 *   **⚡ Streaming Responses:** Answers stream in token-by-token using Server-Sent Events (SSE) for a real-time, responsive user experience.
 *   **🔬 Reasoning Transparency:** Every AI-powered response includes a "Reasoning" dropdown that shows the exact tools the agent used, the parameters it chose, and the results it got back, providing full transparency into the AI's thought process.
 *   **💾 Persistent Chat History:** Conversations are automatically saved to `localStorage`, allowing you to manage multiple chats and pick up where you left off.
-*   **😎 Modern UI/UX:** A clean, responsive interface with a dark mode toggle for comfortable viewing.
+*   **😎 Modern UI/UX:** A responsive interface with a dark mode toggle for comfortable viewing.
 
 ## 🚀 Technical Showcase & Architecture
 
-This project was architected with a strong emphasis on **separation of concerns**, **maintainability**, and **modern development patterns**.
+This project was architected with an emphasis on **separation of concerns**, **maintainability**, and **modern development patterns**.
 
 ### Backend: The Agentic Core (`/app/api/chat`)
 
@@ -42,7 +42,7 @@ The backend is a single Next.js API Route that orchestrates the entire AI agenti
 4.  **Synthesizer Agent:** After the tool loop is complete, a final "Synthesizer" LLM call is made with the full context (original question + all tool results) to generate the final, user-facing answer.
 5.  **Streaming via SSE:** The final response is streamed back to the client using the `ReadableStream` API for a real-time feel.
 
-### Frontend: A Modern, Hook-Based Approach (`/components`, `/hooks`)
+### Frontend: A Hook-Based Approach (`/components`, `/hooks`)
 
 The frontend was refactored from a single monolithic component into a scalable, component-based architecture powered by custom hooks.
 
@@ -58,7 +58,7 @@ This architecture ensures the application is not only functional but also clean,
 
 ## 🛠️ Tech Stack
 
-*   **Framework:** Next.js 14 (App Router)
+*   **Framework:** Next.js 15 (App Router)
 *   **Language:** TypeScript
 *   **Styling:** Tailwind CSS
 *   **AI:** OpenAI API (GPT-4.1-mini)
