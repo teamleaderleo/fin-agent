@@ -4,6 +4,8 @@ import { fmpFunctions } from "@/lib/fmp_tools";
 import { openai } from "@/lib/openai_client";
 import { fmpClient } from "@/lib/fmp_client";
 
+const PUBLIC_API_KEY = process.env.PUBLIC_API_KEY
+
 // Convert our tool definitions to OpenAI format
 const openaiTools = fmpFunctions.map(tool => ({
   type: "function" as const,
@@ -30,6 +32,7 @@ export async function POST(req: NextRequest) {
     // =================================================================
     const conversationHistory = [...messages];
     const allToolsUsed: string[] = [];
+    const reasoningTrace: any[] = [];
     const maxSteps = 5; // Prevent infinite loops
     
     for (let step = 0; step < maxSteps; step++) {
@@ -65,9 +68,25 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
         content: plannerDecision.content?.substring(0, 100)
       });
 
+      // Add to reasoning trace
+      reasoningTrace.push({
+        step: step + 1,
+        type: 'planning',
+        timestamp: new Date().toISOString(),
+        hasToolCalls: !!plannerDecision.tool_calls,
+        toolCallsCount: plannerDecision.tool_calls?.length || 0,
+        content: plannerDecision.content
+      });
+
       // If no tool call, we're done with the agent loop
       if (!plannerDecision.tool_calls || plannerDecision.tool_calls.length === 0) {
         console.log(`✅ Step ${step + 1}: Agent finished. No more tools needed.`);
+        reasoningTrace.push({
+          step: step + 1,
+          type: 'completion',
+          timestamp: new Date().toISOString(),
+          message: 'Agent finished. No more tools needed.'
+        });
         break;
       }
 
@@ -79,6 +98,16 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
       console.log(`🚀 Step ${step + 1}: Executing '${toolName}' with args:`, toolArgs);
       allToolsUsed.push(toolName);
 
+      // Add to reasoning trace
+      reasoningTrace.push({
+        step: step + 1,
+        type: 'tool_execution',
+        timestamp: new Date().toISOString(),
+        toolName: toolName,
+        toolArgs: toolArgs,
+        message: `Executing ${toolName}`
+      });
+
       // =================================================================
       // TOOL EXECUTOR - Execute the chosen tool
       // =================================================================
@@ -87,7 +116,7 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
 
       switch (toolName) {
         case "resolveSymbol":
-          sourceUrl = `https://financialmodelingprep.com/stable/search-name?query=${encodeURIComponent(toolArgs.query)}&limit=10`;
+          sourceUrl = `https://financialmodelingprep.com/stable/search-name?query=${encodeURIComponent(toolArgs.query)}&limit=10&apikey=${PUBLIC_API_KEY}`;
           toolResult = await fmpClient.get("/search-name", { 
             query: toolArgs.query,
             limit: "10"
@@ -95,14 +124,14 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
           break;
 
         case "listTranscriptDates":
-          sourceUrl = `https://financialmodelingprep.com/stable/earning-call-transcript-dates?symbol=${toolArgs.symbol}`;
+          sourceUrl = `https://financialmodelingprep.com/stable/earning-call-transcript-dates?symbol=${toolArgs.symbol}&apikey=${PUBLIC_API_KEY}`;
           toolResult = await fmpClient.get("/earning-call-transcript-dates", { 
             symbol: toolArgs.symbol 
           });
           break;
 
         case "getTranscript":
-          sourceUrl = `https://financialmodelingprep.com/stable/earning-call-transcript?symbol=${toolArgs.symbol}&year=${toolArgs.year}&quarter=${toolArgs.quarter}`;
+          sourceUrl = `https://financialmodelingprep.com/stable/earning-call-transcript?symbol=${toolArgs.symbol}&year=${toolArgs.year}&quarter=${toolArgs.quarter}&apikey=${PUBLIC_API_KEY}`;
           toolResult = await fmpClient.get("/earning-call-transcript", {
             symbol: toolArgs.symbol,
             year: toolArgs.year,
@@ -114,7 +143,7 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
           const statementEndpoint = `/${toolArgs.statement}-statement`;
           const period = toolArgs.period || 'annual';
           const limit = toolArgs.limit || 5;
-          sourceUrl = `https://financialmodelingprep.com/stable${statementEndpoint}?symbol=${toolArgs.symbol}&period=${period}&limit=${limit}`;
+          sourceUrl = `https://financialmodelingprep.com/stable${statementEndpoint}?symbol=${toolArgs.symbol}&period=${period}&limit=${limit}&apikey=${PUBLIC_API_KEY}`;
           toolResult = await fmpClient.get(statementEndpoint, {
             symbol: toolArgs.symbol,
             period: period,
@@ -124,7 +153,7 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
 
         case "getFinancialGrowth":
           const growthLimit = (Math.max(...(toolArgs.years || [10])) + 1).toString();
-          sourceUrl = `https://financialmodelingprep.com/stable/financial-growth?symbol=${toolArgs.symbol}&period=${toolArgs.period || 'annual'}&limit=${growthLimit}`;
+          sourceUrl = `https://financialmodelingprep.com/stable/financial-growth?symbol=${toolArgs.symbol}&period=${toolArgs.period || 'annual'}&limit=${growthLimit}&apikey=${PUBLIC_API_KEY}`;
           toolResult = await fmpClient.get("/financial-growth", {
             symbol: toolArgs.symbol,
             period: toolArgs.period || 'annual',
@@ -142,7 +171,7 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
 
         case "getKeyMetrics":
           const metricsLimit = toolArgs.limit || 5;
-          sourceUrl = `https://financialmodelingprep.com/stable/key-metrics?symbol=${toolArgs.symbol}&period=annual&limit=${metricsLimit}`;
+          sourceUrl = `https://financialmodelingprep.com/stable/key-metrics?symbol=${toolArgs.symbol}&period=annual&limit=${metricsLimit}&apikey=${PUBLIC_API_KEY}`;
           toolResult = await fmpClient.get("/key-metrics", {
             symbol: toolArgs.symbol,
             period: 'annual',
@@ -155,7 +184,7 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
             ? toolArgs.symbols.join(',') 
             : toolArgs.symbols;
           const newsLimit = toolArgs.limit || 20;
-          sourceUrl = `https://financialmodelingprep.com/stable/news/stock?symbols=${symbolsString}&limit=${newsLimit}`;
+          sourceUrl = `https://financialmodelingprep.com/stable/news/stock?symbols=${symbolsString}&limit=${newsLimit}&apikey=${PUBLIC_API_KEY}`;
           toolResult = await fmpClient.get("/news/stock", {
             symbols: symbolsString,
             limit: newsLimit.toString()
@@ -163,7 +192,7 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
           break;
 
         case "getQuote":
-          sourceUrl = `https://financialmodelingprep.com/stable/quote?symbol=${toolArgs.symbol}`;
+          sourceUrl = `https://financialmodelingprep.com/stable/quote?symbol=${toolArgs.symbol}&apikey=${PUBLIC_API_KEY}`;
           toolResult = await fmpClient.get("/quote", { 
             symbol: toolArgs.symbol 
           });
@@ -190,6 +219,18 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
             : 'Empty object'
           : toolResult
       );
+
+      // Add to reasoning trace
+      reasoningTrace.push({
+        step: step + 1,
+        type: 'tool_result',
+        timestamp: new Date().toISOString(),
+        toolName: toolName,
+        success: !toolResult || (typeof toolResult === 'object' && toolResult !== null && 'error' in toolResult ? !(toolResult as { error?: unknown }).error : true),
+        resultPreview: typeof toolResult === 'object' && toolResult !== null 
+          ? `Object with ${Object.keys(toolResult).length} keys`
+          : String(toolResult).substring(0, 100)
+      });
 
       // =================================================================
       // TOOL RESULT PROCESSOR - Clean up results for better parsing
@@ -330,7 +371,8 @@ The original question was: "${userMessage.content}"`
     return NextResponse.json({ 
       reply: finalReply,
       toolsUsed: allToolsUsed,
-      stepCount: allToolsUsed.length
+      stepCount: allToolsUsed.length,
+      reasoning: reasoningTrace
     });
 
   } catch (error) {

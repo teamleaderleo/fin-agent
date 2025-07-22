@@ -6,12 +6,15 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   toolUsed?: string;
+  reasoning?: any[];
+  stepCount?: number;
 }
 
 export default function ChatInterface() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [expandedReasoning, setExpandedReasoning] = useState<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -56,7 +59,9 @@ export default function ChatInterface() {
       setMessages([...newMessages, { 
         role: 'assistant', 
         content: data.reply,
-        toolUsed: data.toolUsed 
+        toolUsed: data.toolsUsed?.join(' → '),
+        reasoning: data.reasoning,
+        stepCount: data.stepCount
       }]);
 
     } catch (error) {
@@ -73,14 +78,20 @@ export default function ChatInterface() {
   };
 
   const formatMessage = (content: string) => {
-    // Handle markdown-style citations like [[toolName](url)]
-    const withMarkdownLinks = content.replace(
+    // Handle double bracket citations like [[Tool Name](url)]
+    let formatted = content.replace(
       /\[\[([^\]]+)\]\(([^)]+)\)\]/g,
       '<a href="$2" target="_blank" rel="noopener noreferrer" class="inline-block bg-blue-100 text-blue-800 text-xs font-medium px-2 py-0.5 rounded-full ml-1 hover:bg-blue-200 transition-colors">$1 🔗</a>'
     );
     
-    // Still handle old-style citations like [toolName] for backward compatibility (UH, we can remove this; we don't care about backwards compatibility)
-    return withMarkdownLinks.replace(
+    // Handle broken format like **Tool Name**(url) that LLM sometimes outputs
+    formatted = formatted.replace(
+      /\*\*([^*]+)\*\*\(([^)]+)\)/g,
+      '<a href="$2" target="_blank" rel="noopener noreferrer" class="inline-block bg-blue-100 text-blue-800 text-xs font-medium px-2 py-0.5 rounded-full ml-1 hover:bg-blue-200 transition-colors">$1 🔗</a>'
+    );
+    
+    // Handle old-style citations like [toolName] for backward compatibility
+    return formatted.replace(
       /\[([^\]]+)\]/g, 
       '<span class="inline-block bg-blue-100 text-blue-800 text-xs font-medium px-2 py-0.5 rounded-full ml-1">$1</span>'
     );
@@ -132,22 +143,79 @@ export default function ChatInterface() {
           {/* Message list */}
           {messages.map((msg, idx) => (
             <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-2xl rounded-2xl px-4 py-3 ${
-                msg.role === 'user' 
-                  ? 'bg-gray-800 text-white ml-12 shadow-sm' 
-                  : 'bg-white/60 backdrop-blur-sm border border-gray-200/50 text-gray-800 mr-12 shadow-sm'
-              }`}>
-                <div 
-                  className="whitespace-pre-wrap"
-                  dangerouslySetInnerHTML={{ 
-                    __html: msg.role === 'assistant' ? formatMessage(msg.content) : msg.content 
-                  }}
-                />
-                {msg.toolUsed && (
-                  <div className="text-xs text-gray-500 mt-2 font-mono">
-                    🔧 Used: {msg.toolUsed}
+              <div className={`max-w-2xl ${msg.role === 'user' ? 'ml-12' : 'mr-12'} space-y-2`}>
+                
+                {/* Reasoning Bar (top of assistant messages, like Claude) */}
+                {msg.role === 'assistant' && msg.reasoning && msg.reasoning.length > 0 && (
+                  <div 
+                    onClick={() => setExpandedReasoning(expandedReasoning === idx ? null : idx)}
+                    className="cursor-pointer bg-white/40 backdrop-blur-sm border border-gray-200/50 rounded-lg px-3 py-2 hover:bg-white/60 transition-all duration-200 select-none"
+                  >
+                    <div className="flex items-center justify-between text-sm text-gray-600">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs">🧠</span>
+                        <span>Used {msg.stepCount} reasoning steps</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-gray-400">Click to expand</span>
+                        <span className={`transform transition-transform text-gray-400 ${expandedReasoning === idx ? 'rotate-180' : ''}`}>
+                          ▼
+                        </span>
+                      </div>
+                    </div>
+                    
+                    {expandedReasoning === idx && (
+                      <div className="mt-3 pt-3 border-t border-gray-200/50 space-y-3">
+                        {msg.reasoning.map((step, stepIdx) => (
+                          <div key={stepIdx} className="text-xs">
+                            <div className="flex items-start gap-2 mb-1">
+                              <span className="text-gray-400 font-mono mt-0.5">
+                                {step.step}.
+                              </span>
+                              <div className="flex-1">
+                                <div className="font-medium text-gray-700 flex items-center gap-1">
+                                  {step.type === 'planning' && '🧠 Planning next action'}
+                                  {step.type === 'tool_execution' && `🚀 Executing ${step.toolName}`}
+                                  {step.type === 'tool_result' && `✅ Got result from ${step.toolName}`}
+                                  {step.type === 'completion' && '🏁 Agent finished'}
+                                </div>
+                                {step.toolArgs && (
+                                  <div className="text-gray-500 mt-0.5 font-mono">
+                                    {JSON.stringify(step.toolArgs)}
+                                  </div>
+                                )}
+                                {step.resultPreview && (
+                                  <div className="text-gray-500 mt-0.5">
+                                    → {step.resultPreview}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
+
+                {/* Main Message Content */}
+                <div className={`rounded-2xl px-4 py-3 ${
+                  msg.role === 'user' 
+                    ? 'bg-gray-800 text-white shadow-sm' 
+                    : 'bg-white/60 backdrop-blur-sm border border-gray-200/50 text-gray-800 shadow-sm'
+                }`}>
+                  <div 
+                    className="whitespace-pre-wrap"
+                    dangerouslySetInnerHTML={{ 
+                      __html: msg.role === 'assistant' ? formatMessage(msg.content) : msg.content 
+                    }}
+                  />
+                  {msg.toolUsed && (
+                    <div className="text-xs text-gray-500 mt-2 font-mono">
+                      🔧 Used: {msg.toolUsed}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           ))}
