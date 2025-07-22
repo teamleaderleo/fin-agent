@@ -83,9 +83,11 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
       // TOOL EXECUTOR - Execute the chosen tool
       // =================================================================
       let toolResult: unknown;
+      let sourceUrl: string = "";
 
       switch (toolName) {
         case "resolveSymbol":
+          sourceUrl = `https://financialmodelingprep.com/stable/search-name?query=${encodeURIComponent(toolArgs.query)}&limit=10`;
           toolResult = await fmpClient.get("/search-name", { 
             query: toolArgs.query,
             limit: "10"
@@ -93,12 +95,14 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
           break;
 
         case "listTranscriptDates":
+          sourceUrl = `https://financialmodelingprep.com/stable/earning-call-transcript-dates?symbol=${toolArgs.symbol}`;
           toolResult = await fmpClient.get("/earning-call-transcript-dates", { 
             symbol: toolArgs.symbol 
           });
           break;
 
         case "getTranscript":
+          sourceUrl = `https://financialmodelingprep.com/stable/earning-call-transcript?symbol=${toolArgs.symbol}&year=${toolArgs.year}&quarter=${toolArgs.quarter}`;
           toolResult = await fmpClient.get("/earning-call-transcript", {
             symbol: toolArgs.symbol,
             year: toolArgs.year,
@@ -108,18 +112,23 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
 
         case "getStatement":
           const statementEndpoint = `/${toolArgs.statement}-statement`;
+          const period = toolArgs.period || 'annual';
+          const limit = toolArgs.limit || 5;
+          sourceUrl = `https://financialmodelingprep.com/stable${statementEndpoint}?symbol=${toolArgs.symbol}&period=${period}&limit=${limit}`;
           toolResult = await fmpClient.get(statementEndpoint, {
             symbol: toolArgs.symbol,
-            period: toolArgs.period || 'annual',
-            limit: toolArgs.limit || 5
+            period: period,
+            limit: limit.toString()
           });
           break;
 
         case "getFinancialGrowth":
+          const growthLimit = (Math.max(...(toolArgs.years || [10])) + 1).toString();
+          sourceUrl = `https://financialmodelingprep.com/stable/financial-growth?symbol=${toolArgs.symbol}&period=${toolArgs.period || 'annual'}&limit=${growthLimit}`;
           toolResult = await fmpClient.get("/financial-growth", {
             symbol: toolArgs.symbol,
             period: toolArgs.period || 'annual',
-            limit: (Math.max(...(toolArgs.years || [10])) + 1).toString()
+            limit: growthLimit
           });
           
           // Add metadata about what was requested
@@ -132,10 +141,12 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
           break;
 
         case "getKeyMetrics":
+          const metricsLimit = toolArgs.limit || 5;
+          sourceUrl = `https://financialmodelingprep.com/stable/key-metrics?symbol=${toolArgs.symbol}&period=annual&limit=${metricsLimit}`;
           toolResult = await fmpClient.get("/key-metrics", {
             symbol: toolArgs.symbol,
             period: 'annual',
-            limit: toolArgs.limit || 5
+            limit: metricsLimit.toString()
           });
           break;
 
@@ -143,19 +154,23 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
           const symbolsString = Array.isArray(toolArgs.symbols) 
             ? toolArgs.symbols.join(',') 
             : toolArgs.symbols;
+          const newsLimit = toolArgs.limit || 20;
+          sourceUrl = `https://financialmodelingprep.com/stable/news/stock?symbols=${symbolsString}&limit=${newsLimit}`;
           toolResult = await fmpClient.get("/news/stock", {
             symbols: symbolsString,
-            limit: toolArgs.limit || 20
+            limit: newsLimit.toString()
           });
           break;
 
         case "getQuote":
+          sourceUrl = `https://financialmodelingprep.com/stable/quote?symbol=${toolArgs.symbol}`;
           toolResult = await fmpClient.get("/quote", { 
             symbol: toolArgs.symbol 
           });
           break;
 
         case "searchTranscripts":
+          sourceUrl = "Not implemented";
           toolResult = {
             error: "searchTranscripts not yet implemented",
             suggestion: "Try asking about a specific earnings call using getTranscript"
@@ -164,6 +179,7 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
 
         default:
           console.error(`❌ Unknown tool called: ${toolName}`);
+          sourceUrl = "Unknown tool";
           toolResult = { error: `Unknown tool: ${toolName}` };
       }
 
@@ -198,12 +214,16 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
               companyName: bestResult.name,
               exchange: bestResult.exchange,
               currency: bestResult.currency,
+              sourceUrl: sourceUrl,
+              toolDescription: "Company Search",
               message: `Found ticker symbol: ${bestResult.symbol} for ${bestResult.name} on ${bestResult.exchange}`
             };
           } else {
             processedToolResult = {
               query: toolArgs.query,
               found: false,
+              sourceUrl: sourceUrl,
+              toolDescription: "Company Search",
               message: `No ticker symbol found for "${toolArgs.query}"`
             };
           }
@@ -211,18 +231,28 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
           
         case "getStatement":
           if (Array.isArray(toolResult) && toolResult.length > 0) {
+            const statementTypeMap = {
+              'income': 'Income Statement API',
+              'balance-sheet': 'Balance Sheet API', 
+              'cash-flow': 'Cash Flow API'
+            };
+            
             processedToolResult = {
               symbol: toolArgs.symbol,
               statementType: toolArgs.statement,
               period: toolArgs.period || 'annual',
               recordsFound: toolResult.length,
               mostRecentPeriod: toolResult[0],
-              allPeriods: toolResult.slice(0, 3) // Latest 3 periods for context
+              allPeriods: toolResult.slice(0, 3), // Latest 3 periods for context
+              sourceUrl: sourceUrl,
+              toolDescription: statementTypeMap[String(toolArgs.statement) as keyof typeof statementTypeMap] || 'Financial Statement API'
             };
           } else {
             processedToolResult = {
               symbol: toolArgs.symbol,
               statementType: toolArgs.statement,
+              sourceUrl: sourceUrl,
+              toolDescription: 'Financial Statement API',
               error: "No financial statements found"
             };
           }
@@ -230,13 +260,23 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
           
         case "getQuote":
           if (Array.isArray(toolResult) && toolResult.length > 0) {
-            processedToolResult = toolResult[0];
+            processedToolResult = {
+              ...toolResult[0],
+              sourceUrl: sourceUrl,
+              toolDescription: "Stock Quote API"
+            };
           }
           break;
           
         // Keep other tools as-is for now
         default:
-          processedToolResult = toolResult;
+          if (typeof processedToolResult === 'object' && processedToolResult !== null) {
+            processedToolResult = {
+              ...processedToolResult,
+              sourceUrl: sourceUrl,
+              toolDescription: toolName // fallback to function name
+            };
+          }
       }
 
       // Add this tool interaction to the conversation history
@@ -268,11 +308,14 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
           content: `You are a financial analyst. Answer the user's question using the data provided from the tool execution chain.
 
 Rules:
-- Be concise and direct
-- For every fact or number you mention, cite the source in brackets like [toolName] based on which tool provided that specific data
+- Be comprehensive and include all relevant financial details from the data
+- For each tool used, cite it using the toolDescription and sourceUrl from the tool results
+- Use this EXACT citation format: [[toolDescription](sourceUrl)]
 - If data is missing or has errors, explain that clearly
 - Don't make up information not in the provided data
 - Format financial numbers clearly (e.g., $5.8B, 15.2%)
+
+CRITICAL: Look for "toolDescription" and "sourceUrl" fields in the tool results and use them for citations.
 
 The original question was: "${userMessage.content}"`
         },

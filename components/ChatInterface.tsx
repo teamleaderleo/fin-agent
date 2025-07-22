@@ -73,8 +73,14 @@ export default function ChatInterface() {
   };
 
   const formatMessage = (content: string) => {
-    // Highlight citations like [toolName] with a subtle badge style
-    return content.replace(
+    // Handle markdown-style citations like [[toolName](url)]
+    const withMarkdownLinks = content.replace(
+      /\[\[([^\]]+)\]\(([^)]+)\)\]/g,
+      '<a href="$2" target="_blank" rel="noopener noreferrer" class="inline-block bg-blue-100 text-blue-800 text-xs font-medium px-2 py-0.5 rounded-full ml-1 hover:bg-blue-200 transition-colors">$1 🔗</a>'
+    );
+    
+    // Still handle old-style citations like [toolName] for backward compatibility (UH, we can remove this; we don't care about backwards compatibility)
+    return withMarkdownLinks.replace(
       /\[([^\]]+)\]/g, 
       '<span class="inline-block bg-blue-100 text-blue-800 text-xs font-medium px-2 py-0.5 rounded-full ml-1">$1</span>'
     );
