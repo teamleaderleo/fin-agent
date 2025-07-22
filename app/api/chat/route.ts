@@ -269,7 +269,7 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
 
 Rules:
 - Be concise and direct
-- For every fact or number you mention, cite the relevant tool in brackets
+- For every fact or number you mention, cite the source in brackets like [toolName] based on which tool provided that specific data
 - If data is missing or has errors, explain that clearly
 - Don't make up information not in the provided data
 - Format financial numbers clearly (e.g., $5.8B, 15.2%)
