@@ -362,18 +362,30 @@ export default function ChatInterface() {
                 
                 {/* Reasoning Bar (top of assistant messages, like Claude) */}
                 {msg.role === 'assistant' && msg.reasoning && msg.reasoning.length > 0 && (
-                  <div className="bg-white/40 backdrop-blur-sm border border-gray-200/50 rounded-lg overflow-hidden">
+                  <div className={`backdrop-blur-sm border rounded-lg overflow-hidden transition-colors ${
+                    isDarkMode
+                      ? 'bg-gray-800/40 border-gray-700/50'
+                      : 'bg-white/40 border-gray-200/50'
+                  }`}>
                     {/* Clickable Header */}
-                    <div className="px-3 py-2 hover:bg-white/60 transition-all duration-200">
-                      <div className="flex items-center justify-between text-sm text-gray-600">
+                    <div className={`px-3 py-2 hover:bg-opacity-60 transition-all duration-200 ${
+                      isDarkMode ? 'hover:bg-gray-700/60' : 'hover:bg-white/60'
+                    }`}>
+                      <div className={`flex items-center justify-between text-sm transition-colors ${
+                        isDarkMode ? 'text-gray-300' : 'text-gray-600'
+                      }`}>
                         <div 
                           onClick={() => setExpandedReasoning(expandedReasoning === idx ? null : idx)}
                           className="flex items-center gap-2 cursor-pointer select-none flex-1"
                         >
                           <span className="text-xs">🧠</span>
                           <span>Used {msg.stepCount} reasoning steps</span>
-                          <span className="text-xs text-gray-400">Click to expand</span>
-                          <span className={`transform transition-transform text-gray-400 ${expandedReasoning === idx ? 'rotate-180' : ''}`}>
+                          <span className={`text-xs transition-colors ${
+                            isDarkMode ? 'text-gray-500' : 'text-gray-400'
+                          }`}>Click to expand</span>
+                          <span className={`transform transition-transform ${
+                            isDarkMode ? 'text-gray-500' : 'text-gray-400'
+                          } ${expandedReasoning === idx ? 'rotate-180' : ''}`}>
                             ▼
                           </span>
                         </div>
@@ -382,7 +394,11 @@ export default function ChatInterface() {
                             e.stopPropagation();
                             copyReasoning(idx, msg.reasoning!);
                           }}
-                          className="ml-2 px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded transition-colors flex items-center gap-1"
+                          className={`ml-2 px-2 py-1 text-xs rounded transition-colors flex items-center gap-1 ${
+                            isDarkMode
+                              ? 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                              : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                          }`}
                         >
                           {copiedReasoning === idx ? (
                             <>✓ Copied</>
@@ -395,30 +411,42 @@ export default function ChatInterface() {
                     
                     {/* Expandable Content - NOT clickable, text is selectable */}
                     {expandedReasoning === idx && (
-                      <div className="px-3 pb-3 pt-0 border-t border-gray-200/50 space-y-3 select-text">
+                      <div className={`px-3 pb-3 pt-0 border-t space-y-3 select-text transition-colors ${
+                        isDarkMode ? 'border-gray-700/50' : 'border-gray-200/50'
+                      }`}>
                         {msg.reasoning.map((step, stepIdx) => (
                           <div key={stepIdx} className="text-xs">
                             <div className="flex items-start gap-2 mb-1">
-                              <span className="text-gray-400 font-mono mt-0.5 select-none">
+                              <span className={`font-mono mt-0.5 select-none transition-colors ${
+                                isDarkMode ? 'text-gray-500' : 'text-gray-400'
+                              }`}>
                                 {step.step}.
                               </span>
                               <div className="flex-1">
-                                <div className="font-medium text-gray-700 flex items-center gap-1">
+                                <div className={`font-medium flex items-center gap-1 transition-colors ${
+                                  isDarkMode ? 'text-gray-200' : 'text-gray-700'
+                                }`}>
                                   {step.type === 'tool_step' && `🚀 ${step.toolName}`}
                                   {step.type === 'completion' && '🏁 Finished'}
                                 </div>
                                 {step.toolArgs && (
-                                  <div className="text-gray-500 mt-0.5 font-mono text-xs">
+                                  <div className={`mt-0.5 font-mono text-xs transition-colors ${
+                                    isDarkMode ? 'text-gray-400' : 'text-gray-500'
+                                  }`}>
                                     {JSON.stringify(step.toolArgs, null, 2)}
                                   </div>
                                 )}
                                 {step.result && (
-                                  <div className="text-gray-500 mt-0.5">
+                                  <div className={`mt-0.5 transition-colors ${
+                                    isDarkMode ? 'text-gray-400' : 'text-gray-500'
+                                  }`}>
                                     → {step.result.preview}
                                   </div>
                                 )}
                                 {step.message && step.type === 'completion' && (
-                                  <div className="text-gray-500 mt-0.5 italic">
+                                  <div className={`mt-0.5 italic transition-colors ${
+                                    isDarkMode ? 'text-gray-400' : 'text-gray-500'
+                                  }`}>
                                     {step.message}
                                   </div>
                                 )}
