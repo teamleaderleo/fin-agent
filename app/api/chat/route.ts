@@ -2,17 +2,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fmpFunctions } from "@/lib/fmp_tools";
 import { openai } from "@/lib/openai_client";
-import { fmpClient } from "@/lib/fmp_client";
-import { executeTranscriptSearch } from "./transcript-searcher";
-
-import { 
-  PLANNER_SYSTEM_PROMPT, 
-  SYNTHESIZER_SYSTEM_PROMPT_TEMPLATE, 
-} from "./prompts";
-
-const PUBLIC_API_KEY = process.env.PUBLIC_API_KEY
-
-// The 'searchTranscriptContent' helper function has been removed from this file.
+import { PLANNER_SYSTEM_PROMPT, SYNTHESIZER_SYSTEM_PROMPT_TEMPLATE } from "./prompts";
+import { executeTool } from "./tool-executor";
+import { processToolResult } from "./tool-processor";
 
 // Convert our tool definitions to OpenAI format
 const openaiTools = fmpFunctions.map(tool => ({
@@ -27,7 +19,6 @@ const openaiTools = fmpFunctions.map(tool => ({
 export async function POST(req: NextRequest) {
   try {
     const { messages } = await req.json();
-    
     if (!messages || messages.length === 0) {
       return NextResponse.json({ error: 'Messages are required' }, { status: 400 });
     }
@@ -36,308 +27,69 @@ export async function POST(req: NextRequest) {
     console.log("📥 Received user message:", userMessage.content);
 
     // =================================================================
-    // AGENTIC TOOL CHAINING - Execute tools until complete
+    // AGENTIC TOOL CHAINING
     // =================================================================
     const conversationHistory = [...messages];
     const allToolsUsed: string[] = [];
     const reasoningTrace: any[] = [];
     let toolStepCounter = 0;
-    const maxSteps = 12; // Prevent infinite loops
+    const maxSteps = 12;
     
     for (let step = 0; step < maxSteps; step++) {
       console.log(`\n🧠 Step ${step + 1}: Planning next action...`);
       
       const plannerResponse = await openai.chat.completions.create({
         model: "gpt-4.1-mini",
-        messages: [
-          {
-            role: "system",
-            content: PLANNER_SYSTEM_PROMPT
-          },
-          ...conversationHistory
-        ],
+        messages: [{ role: "system", content: PLANNER_SYSTEM_PROMPT }, ...conversationHistory],
         tools: openaiTools,
         tool_choice: "auto",
         temperature: 0.1,
       });
 
       const plannerDecision = plannerResponse.choices[0].message;
-      console.log(`🤔 Step ${step + 1} decision:`, {
-        hasToolCalls: !!plannerDecision.tool_calls,
-        toolCallsCount: plannerDecision.tool_calls?.length || 0,
-        content: plannerDecision.content?.substring(0, 100)
-      });
-
-      // If no tool call, we're done with the agent loop
-      if (!plannerDecision.tool_calls || plannerDecision.tool_calls.length === 0) {
+      if (!plannerDecision.tool_calls?.length) {
         console.log(`✅ Step ${step + 1}: Agent finished. No more tools needed.`);
-        if (toolStepCounter > 0) {
-          reasoningTrace.push({
-            step: toolStepCounter + 1,
-            type: 'completion',
-            timestamp: new Date().toISOString(),
-            message: 'Agent finished - no more tools needed'
-          });
-        }
         break;
       }
-
-      // Process ALL tool calls (OpenAI can return multiple at once)
+      
+      conversationHistory.push(plannerDecision);
       const toolResponses = [];
       
       for (const toolCall of plannerDecision.tool_calls) {
         const toolName = toolCall.function.name;
         const toolArgs = JSON.parse(toolCall.function.arguments);
 
-        console.log(`🚀 Step ${step + 1}: Executing '${toolName}' with args:`, toolArgs);
-        allToolsUsed.push(toolName);
+        console.log(`🚀 Step ${step + 1}: Executing '${toolName}'...`);
         toolStepCounter++;
+        allToolsUsed.push(toolName);
 
-        const toolStep = {
+        // 1. EXECUTE TOOL using the executor service
+        const { toolResult, sourceUrl } = await executeTool(toolName, toolArgs);
+
+        // 2. PROCESS RESULT using the processor service
+        const processedToolResult = processToolResult(toolName, toolResult, toolArgs, sourceUrl);
+
+        // 3. LOGGING AND TRACING
+        console.log(`✅ Tool result for '${toolName}' processed.`);
+        reasoningTrace.push({
           step: toolStepCounter,
           type: 'tool_step',
-          timestamp: new Date().toISOString(),
           toolName: toolName,
           toolArgs: toolArgs,
-          result: null as any
-        };
-        reasoningTrace.push(toolStep);
-
-        // =================================================================
-        // TOOL EXECUTOR - Execute the chosen tool
-        // =================================================================
-        let toolResult: unknown;
-        let sourceUrl: string = "";
-
-        switch (toolName) {
-          case "resolveSymbol":
-            sourceUrl = `https://financialmodelingprep.com/stable/search-name?query=${encodeURIComponent(toolArgs.query)}&limit=10&apikey=${PUBLIC_API_KEY}`;
-            toolResult = await fmpClient.get("/search-name", { 
-              query: toolArgs.query,
-              limit: "10"
-            });
-            break;
-
-          case "listTranscriptDates":
-            sourceUrl = `https://financialmodelingprep.com/stable/earning-call-transcript-dates?symbol=${toolArgs.symbol}&apikey=${PUBLIC_API_KEY}`;
-            toolResult = await fmpClient.get("/earning-call-transcript-dates", { 
-              symbol: toolArgs.symbol 
-            });
-            break;
-
-          case "getTranscript":
-            sourceUrl = `https://financialmodelingprep.com/stable/earning-call-transcript?symbol=${toolArgs.symbol}&year=${toolArgs.year}&quarter=${toolArgs.quarter}&apikey=${PUBLIC_API_KEY}`;
-            toolResult = await fmpClient.get("/earning-call-transcript", {
-              symbol: toolArgs.symbol,
-              year: toolArgs.year,
-              quarter: toolArgs.quarter
-            });
-            break;
-
-          case "getStatement":
-            const statementEndpoint = `/${toolArgs.statement}-statement`;
-            const period = toolArgs.period || 'annual';
-            const limit = toolArgs.limit || 5;
-            sourceUrl = `https://financialmodelingprep.com/stable${statementEndpoint}?symbol=${toolArgs.symbol}&period=${period}&limit=${limit}&apikey=${PUBLIC_API_KEY}`;
-            toolResult = await fmpClient.get(statementEndpoint, {
-              symbol: toolArgs.symbol,
-              period: period,
-              limit: limit.toString()
-            });
-            break;
-
-          case "getFinancialGrowth":
-            const growthLimit = (Math.max(...(toolArgs.years || [10])) + 1).toString();
-            sourceUrl = `https://financialmodelingprep.com/stable/financial-growth?symbol=${toolArgs.symbol}&period=${toolArgs.period || 'annual'}&limit=${growthLimit}&apikey=${PUBLIC_API_KEY}`;
-            toolResult = await fmpClient.get("/financial-growth", {
-              symbol: toolArgs.symbol,
-              period: toolArgs.period || 'annual',
-              limit: growthLimit
-            });
-            
-            toolResult = {
-              symbol: toolArgs.symbol,
-              metric: toolArgs.metric,
-              requestedYears: toolArgs.years,
-              rawData: toolResult
-            };
-            break;
-
-          case "getKeyMetrics":
-            const metricsLimit = toolArgs.limit || 5;
-            sourceUrl = `https://financialmodelingprep.com/stable/key-metrics?symbol=${toolArgs.symbol}&period=annual&limit=${metricsLimit}&apikey=${PUBLIC_API_KEY}`;
-            toolResult = await fmpClient.get("/key-metrics", {
-              symbol: toolArgs.symbol,
-              period: 'annual',
-              limit: metricsLimit.toString()
-            });
-            break;
-
-          case "searchNews":
-            const symbolsString = Array.isArray(toolArgs.symbols) ? toolArgs.symbols.join(',') : toolArgs.symbols;
-            const newsLimit = toolArgs.limit || 20;
-            sourceUrl = `https://financialmodelingprep.com/stable/news/stock?symbols=${symbolsString}&limit=${newsLimit}&apikey=${PUBLIC_API_KEY}`;
-            toolResult = await fmpClient.get("/news/stock", {
-              symbols: symbolsString,
-              limit: newsLimit.toString()
-            });
-            break;
-
-          case "getQuote":
-            sourceUrl = `https://financialmodelingprep.com/stable/quote?symbol=${toolArgs.symbol}&apikey=${PUBLIC_API_KEY}`;
-            toolResult = await fmpClient.get("/quote", { 
-              symbol: toolArgs.symbol 
-            });
-            break;
-
-          case "searchTranscripts":
-            const symbolsForUrl = Array.isArray(toolArgs.symbols) ? toolArgs.symbols : [toolArgs.symbols];
-            sourceUrl = symbolsForUrl.length === 1 
-              ? `https://financialmodelingprep.com/stable/earning-call-transcript-dates?symbol=${symbolsForUrl[0]}&apikey=${PUBLIC_API_KEY}`
-              : `https://financialmodelingprep.com/developer/docs/stable/earnings-transcript-list`;
-            
-            // The entire complex logic is now replaced by this single service call.
-            toolResult = await executeTranscriptSearch(toolArgs);
-            break;
-
-          default:
-            console.error(`❌ Unknown tool called: ${toolName}`);
-            sourceUrl = "Unknown tool";
-            toolResult = { error: `Unknown tool: ${toolName}` };
-        }
-
-        console.log(`✅ Tool result preview:`, 
-          typeof toolResult === 'object' && toolResult !== null 
-            ? Object.keys(toolResult).length > 0 
-              ? `Object with keys: ${Object.keys(toolResult).join(', ')}` 
-              : 'Empty object'
-            : toolResult
-        );
-
-        const currentStep = reasoningTrace[reasoningTrace.length - 1];
-        if (currentStep && currentStep.step === toolStepCounter) {
-          currentStep.result = {
-            success: !toolResult || (typeof toolResult === 'object' && !toolResult.error),
-            preview: typeof toolResult === 'object' && toolResult !== null 
-              ? `Object with ${Object.keys(toolResult).length} keys`
-              : String(toolResult).substring(0, 100)
-          };
-        }
-
-        // =================================================================
-        // TOOL RESULT PROCESSOR - This section remains unchanged
-        // =================================================================
-        let processedToolResult = toolResult;
-
-        switch (toolName) {
-          case "resolveSymbol":
-            if (Array.isArray(toolResult) && toolResult.length > 0) {
-              const usExchanges = ['NASDAQ', 'NYSE', 'AMEX'];
-              let bestResult = toolResult.find(result => 
-                usExchanges.includes(result.exchange) && 
-                result.currency === 'USD' &&
-                !result.symbol.includes('.')
-              );
-              if (!bestResult) bestResult = toolResult[0];
-              
-              processedToolResult = {
-                query: toolArgs.query,
-                found: true,
-                ticker: bestResult.symbol,
-                companyName: bestResult.name,
-                exchange: bestResult.exchange,
-                currency: bestResult.currency,
-                sourceUrl: sourceUrl,
-                toolDescription: "Company Search",
-                message: `Found ticker symbol: ${bestResult.symbol} for ${bestResult.name} on ${bestResult.exchange}`
-              };
-            } else {
-              processedToolResult = {
-                query: toolArgs.query,
-                found: false,
-                sourceUrl: sourceUrl,
-                toolDescription: "Company Search",
-                message: `No ticker symbol found for "${toolArgs.query}"`
-              };
-            }
-            break;
-            
-          case "getStatement":
-            if (Array.isArray(toolResult) && toolResult.length > 0) {
-              const statementTypeMap = {
-                'income': 'Income Statement API',
-                'balance-sheet': 'Balance Sheet API', 
-                'cash-flow': 'Cash Flow API'
-              };
-              
-              processedToolResult = {
-                symbol: toolArgs.symbol,
-                statementType: toolArgs.statement,
-                period: toolArgs.period || 'annual',
-                recordsFound: toolResult.length,
-                mostRecentPeriod: toolResult[0],
-                allPeriods: toolResult.slice(0, 3),
-                sourceUrl: sourceUrl,
-                toolDescription: statementTypeMap[String(toolArgs.statement) as keyof typeof statementTypeMap] || 'Financial Statement API'
-              };
-            } else {
-              processedToolResult = {
-                symbol: toolArgs.symbol,
-                statementType: toolArgs.statement,
-                sourceUrl: sourceUrl,
-                toolDescription: 'Financial Statement API',
-                error: "No financial statements found"
-              };
-            }
-            break;
-            
-          case "getQuote":
-            if (Array.isArray(toolResult) && toolResult.length > 0) {
-              processedToolResult = {
-                ...toolResult[0],
-                sourceUrl: sourceUrl,
-                toolDescription: "Stock Quote API"
-              };
-            }
-            break;
-            
-          case "searchTranscripts":
-            if (typeof toolResult === 'object' && toolResult !== null && !toolResult.error) {
-              processedToolResult = {
-                ...toolResult,
-                sourceUrl: sourceUrl,
-                toolDescription: "Multi-Transcript Search"
-              };
-            } else {
-              processedToolResult = {
-                error: typeof toolResult === 'object' && toolResult !== null ? toolResult.error : 'Unknown error',
-                sourceUrl: sourceUrl,
-                toolDescription: "Multi-Transcript Search"
-              };
-            }
-            break;
-            
-          default:
-            if (typeof processedToolResult === 'object' && processedToolResult !== null) {
-              processedToolResult = {
-                ...processedToolResult,
-                sourceUrl: sourceUrl,
-                toolDescription: toolName
-              };
-            }
-            break;
-        }
-
+          result: {
+            success: !processedToolResult.error,
+            preview: `Object with keys: ${Object.keys(processedToolResult).join(', ')}`
+          }
+        });
+        
+        // 4. PREPARE RESPONSE FOR CONVERSATION HISTORY
         toolResponses.push({
           tool_call_id: toolCall.id,
           role: "tool" as const,
           content: JSON.stringify(processedToolResult, null, 2),
         });
-
-        console.log(`📝 Processed tool: ${toolName}`);
       }
 
-      conversationHistory.push({ ...plannerDecision, role: "assistant" as const });
       conversationHistory.push(...toolResponses);
       console.log(`📝 Added all tool results to conversation history`);
     }
@@ -345,27 +97,22 @@ export async function POST(req: NextRequest) {
     console.log(`🎯 Agent execution complete. Used tools: ${allToolsUsed.join(' → ')}`);
 
     // =================================================================
-    // SYNTHESIZER: This section remains unchanged
+    // SYNTHESIZER: Create streaming response from conversation history
     // =================================================================
     console.log("✍️ Final Step: Calling Synthesizer LLM...");
-
     const synthesizerPrompt = SYNTHESIZER_SYSTEM_PROMPT_TEMPLATE.replace('{originalQuestion}', userMessage.content);
 
     const synthesizerResponse = await openai.chat.completions.create({
       model: "gpt-4.1-mini",
-      messages: [
-        { role: "system", content: synthesizerPrompt },
-        ...conversationHistory
-      ],
+      messages: [{ role: "system", content: synthesizerPrompt }, ...conversationHistory],
       temperature: 0.1,
       stream: true,
     });
 
     // =================================================================
-    // STREAMING RESPONSE: This section remains unchanged
+    // STREAMING RESPONSE
     // =================================================================
     const encoder = new TextEncoder();
-    
     const stream = new ReadableStream({
       async start(controller) {
         const metadata = {
@@ -380,20 +127,13 @@ export async function POST(req: NextRequest) {
           for await (const chunk of synthesizerResponse) {
             const content = chunk.choices[0]?.delta?.content || '';
             if (content) {
-              const contentChunk = { type: 'content', content: content };
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify(contentChunk)}\n\n`));
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'content', content })}\n\n`));
             }
           }
-          
-          const completion = { type: 'done' };
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(completion)}\n\n`));
-          
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'done' })}\n\n`));
         } catch (error) {
           console.error("Streaming error:", error);
-          const errorChunk = {
-            type: 'error',
-            error: error instanceof Error ? error.message : 'Unknown error'
-          };
+          const errorChunk = { type: 'error', error: error instanceof Error ? error.message : "Unknown error" };
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(errorChunk)}\n\n`));
         } finally {
           controller.close();
@@ -402,23 +142,12 @@ export async function POST(req: NextRequest) {
     });
 
     return new Response(stream, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-      },
+      headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' },
     });
 
   } catch (error) {
     console.error("💥 Error in chat route:", error);
-    
-    if (error instanceof Error) {
-      console.error("Error details:", { name: error.name, message: error.message, stack: error.stack?.substring(0, 500) });
-    }
-    
-    return NextResponse.json(
-      { error: "An error occurred while processing your request", details: error instanceof Error ? error.message : "Unknown error" }, 
-      { status: 500 }
-    );
+    const details = error instanceof Error ? error.message : "Unknown error";
+    return NextResponse.json({ error: "An error occurred while processing your request", details }, { status: 500 });
   }
 }
