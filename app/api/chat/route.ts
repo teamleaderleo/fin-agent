@@ -298,7 +298,7 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
               symbols: Array.isArray(toolArgs.symbols) ? toolArgs.symbols : [toolArgs.symbols],
               topic: toolArgs.topic || "",
               executives: toolArgs.executives || [],
-              lookbackQuarters: toolArgs.lookbackQuarters || 2,
+              lookbackQuarters: toolArgs.lookbackQuarters || 4,
             };
 
             // --- Topic Expansion ---
@@ -310,20 +310,22 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
                   model: "gpt-4.1-mini",
                   messages: [{
                     role: "system",
-                    content: "You are a research assistant. Expand the given topic into a list of related keywords and product names for searching financial transcripts. Be concise. Respond with only a JSON object: {\"topics\": [\"<keyword1>\", \"<keyword2>\"]}"
+                    content: "You are a financial research assistant. Your task is to expand a given search topic into a list of related keywords, synonyms, and specific product/technology names relevant for searching in earnings call transcripts. Be concise. Respond with only a JSON object containing a single key 'topics' with an array of strings."
                   }, {
                     role: "user",
                     content: `Topic: "${topic}"`
                   }],
                   response_format: { type: "json_object" },
-                  temperature: 0.1,
+                  temperature: 0.2,
                 });
                 const expansionResult = JSON.parse(topicExpansionResponse.choices[0].message.content || '{}');
                 if (expansionResult.topics && Array.isArray(expansionResult.topics)) {
                   expandedTopics = [...new Set([topic, ...expansionResult.topics])];
                   console.log(`✅ Expanded topics to: [${expandedTopics.join(', ')}]`);
                 }
-              } catch (expansionError) { console.error("⚠️ Failed to expand topic, continuing with original:", expansionError); }
+              } catch (expansionError) {
+                console.error("⚠️ Failed to expand topic, continuing with original:", expansionError);
+              }
             }
             
             sourceUrl = symbols.length === 1 
@@ -376,8 +378,8 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
               console.log(`📊 Found ${allMentions.length} total potential mentions. Summarizing...`);
               allMentions.sort((a, b) => a.score - b.score);
 
-              // Fewer is less detail but faster
-              const MAX_MENTIONS_TO_RETURN = 5;
+              // Stricter limits to guarantee staying under the token limit
+              const MAX_MENTIONS_TO_RETURN = 15;
               const SNIPPET_LENGTH = 200;
 
               const summarizedMentions = allMentions.slice(0, MAX_MENTIONS_TO_RETURN).map(mention => ({
