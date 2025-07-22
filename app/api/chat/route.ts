@@ -247,12 +247,14 @@ Use tools whenever the user asks about specific companies or financial data.`
     // Add the tool call and its result to the message history
     const messagesWithToolResult = [
       ...messages,
-      plannerDecision, // The message with the tool call
+      {
+        ...plannerDecision,
+        role: "assistant" as const,
+      },
       {
         tool_call_id: toolCall.id,
         role: "tool" as const,
-        name: toolName,
-        content: JSON.stringify(toolResult),
+        content: JSON.stringify(processedToolResult, null, 2),
       },
     ];
 
