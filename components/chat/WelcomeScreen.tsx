@@ -9,10 +9,12 @@ const exampleQueries = [
   "What's Apple's ticker symbol?",
   "Show me Microsoft's latest income statement",
   "CrowdStrike revenue growth over 5 years",
-  "Get Spotify's recent earnings transcript",
+  "Summarize Spotify's latest conference call",
   "What has Airbnb management said about profitability over the last few earnings calls?",
   "What are Mark Zuckerberg's and Satya Nadella's recent comments about AI?",
   "How many new large deals did ServiceNow sign in the last quarter?",
+  "What was Crowdstrike's revenue in the past 3, 5, and 10 years?",
+  "What was Crowdstrike's revenue growth in the past 3, 5, and 10 years?",
   "What has Tesla said about autonomous driving in recent calls?",
   "Compare Netflix and Disney's subscriber growth strategies",
   "What is Amazon's latest guidance on AWS growth?"
