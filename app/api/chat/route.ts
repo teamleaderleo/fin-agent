@@ -8,94 +8,79 @@ import Fuse from 'fuse.js';
 const PUBLIC_API_KEY = process.env.PUBLIC_API_KEY
 
 // Helper function to search transcript content for topics and executives
-function searchTranscriptContent(content: string, topic: string, executives: string[], symbol: string, dateInfo: any) {
+function searchTranscriptContent(content: string, topics: string[], executives: string[], symbol: string, dateInfo: any) {
   interface TranscriptMention {
-    topic: string;
+    topic: string; // The specific keyword that matched
     speaker: string;
     context: string;
-    matchCount: number;
-    score: number; // Fuse.js score
+    score: number;
   }
 
   const mentions: TranscriptMention[] = [];
-  
-  if (!content || !topic) return mentions;
-  
-  // Split content into paragraphs for better context extraction
+  if (!content || topics.length === 0) return mentions;
+
   const paragraphs = content.split('\n')
     .filter(p => p.trim().length > 50)
     .map((text, index) => ({ text, index }));
-  
-  // Configure Fuse.js for fuzzy search
+
   const fuse = new Fuse(paragraphs, {
     keys: ['text'],
-    threshold: 0.3, // 0 = exact match, 1 = match anything
+    threshold: 0.3,
     includeScore: true,
+    includeMatches: true, // We need this to know which topic matched
     minMatchCharLength: 3,
     ignoreLocation: true
   });
-  
-  // Search for topic mentions
-  const results = fuse.search(topic);
-  
-  console.log(`🔍 Fuzzy search found ${results.length} matches for "${topic}" in ${symbol}`);
-  
-  for (const result of results.slice(0, 8)) { // Top 8 matches
+
+  // Create an $or query for Fuse.js to search for any of the topics
+  const searchQuery = {
+    $or: topics.map(topic => ({ text: topic }))
+  };
+
+  const results = fuse.search(searchQuery);
+  console.log(`🔍 Fuzzy search for ${topics.length} keywords found ${results.length} potential matches in ${symbol}`);
+
+  for (const result of results.slice(0, 15)) { // Increase limit slightly
     const paragraph = result.item.text;
     const paragraphIndex = result.item.index;
     const score = result.score || 0;
     
-    // Extract context (current paragraph + surrounding ones)
+    // Determine which keyword was matched
+    const matchedTopic = result.matches?.[0]?.value || topics[0];
+
     const contextStart = Math.max(0, paragraphIndex - 1);
     const contextEnd = Math.min(paragraphs.length - 1, paragraphIndex + 1);
-    const context = paragraphs.slice(contextStart, contextEnd + 1)
-      .map(p => p.text)
-      .join('\n');
-    
-    // Try to identify the speaker
+    const context = paragraphs.slice(contextStart, contextEnd + 1).map(p => p.text).join('\n');
+
     let speaker = "Unknown";
     let executiveMatch = false;
     
     if (executives.length > 0) {
-      // Look for executive names in surrounding paragraphs
-      const searchArea = paragraphs.slice(Math.max(0, paragraphIndex - 3), paragraphIndex + 1)
-        .map(p => p.text)
-        .join('\n');
-      
+      const searchArea = paragraphs.slice(Math.max(0, paragraphIndex - 3), paragraphIndex + 1).map(p => p.text).join('\n');
       for (const exec of executives) {
-        const execRegex = new RegExp(exec.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-        if (execRegex.test(searchArea)) {
+        if (new RegExp(exec, 'i').test(searchArea)) {
           speaker = exec;
           executiveMatch = true;
           break;
         }
       }
-      
-      // If filtering by executives and no match, skip
       if (!executiveMatch) continue;
     } else {
-      // Try to extract speaker from common patterns
-      const speakerMatch = paragraph.match(/^([A-Z][a-zA-Z\s]+(?:CEO|CFO|President|Officer|Director)?)[:\-]/);
-      if (speakerMatch) {
+      const speakerMatch = paragraph.match(/^([A-Z][a-zA-Z\s.,'-]+?)[:]/);
+      if (speakerMatch && speakerMatch[1]) {
         speaker = speakerMatch[1].trim();
       }
     }
-    
+
     mentions.push({
-      topic: topic,
+      topic: matchedTopic,
       speaker: speaker,
       context: context.substring(0, 800),
-      matchCount: 1, // Fuse doesn't give exact match counts
       score: score
     });
-    
-    console.log(`✅ Found fuzzy match (score: ${score.toFixed(3)}): "${paragraph.substring(0, 100)}..." by ${speaker}`);
   }
-  
-  console.log(`📊 Total mentions found: ${mentions.length}`);
-  
-  // Sort by Fuse.js score (lower = better match)
-  return mentions.sort((a, b) => a.score - b.score).slice(0, 5);
+
+  return mentions.sort((a, b) => a.score - b.score).slice(0, 8); // Return top 8 best matches overall
 }
 
 // Convert our tool definitions to OpenAI format
@@ -309,91 +294,117 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
           case "searchTranscripts":
             console.log("🔍 Executing complex searchTranscripts logic");
             
-            // Extract parameters
-            const symbols = Array.isArray(toolArgs.symbols) ? toolArgs.symbols : [toolArgs.symbols];
-            const topic = toolArgs.topic || "";
-            const executives = toolArgs.executives || [];
-            const lookbackQuarters = toolArgs.lookbackQuarters || 4;
+            const { symbols, topic, executives, lookbackQuarters } = {
+              symbols: Array.isArray(toolArgs.symbols) ? toolArgs.symbols : [toolArgs.symbols],
+              topic: toolArgs.topic || "",
+              executives: toolArgs.executives || [],
+              lookbackQuarters: toolArgs.lookbackQuarters || 4,
+            };
+
+            // --- Topic Expansion ---
+            let expandedTopics = [topic];
+            if (topic) {
+              try {
+                console.log(`🧠 Expanding search topic: "${topic}"`);
+                const topicExpansionResponse = await openai.chat.completions.create({
+                  model: "gpt-4.1-mini",
+                  messages: [{
+                    role: "system",
+                    content: "You are a financial research assistant. Your task is to expand a given search topic into a list of related keywords, synonyms, and specific product/technology names relevant for searching in earnings call transcripts. Be concise. Respond with only a JSON object containing a single key 'topics' with an array of strings."
+                  }, {
+                    role: "user",
+                    content: `Topic: "${topic}"`
+                  }],
+                  response_format: { type: "json_object" },
+                  temperature: 0.2,
+                });
+                const expansionResult = JSON.parse(topicExpansionResponse.choices[0].message.content || '{}');
+                if (expansionResult.topics && Array.isArray(expansionResult.topics)) {
+                  expandedTopics = [...new Set([topic, ...expansionResult.topics])];
+                  console.log(`✅ Expanded topics to: [${expandedTopics.join(', ')}]`);
+                }
+              } catch (expansionError) {
+                console.error("⚠️ Failed to expand topic, continuing with original:", expansionError);
+              }
+            }
             
             sourceUrl = symbols.length === 1 
               ? `https://financialmodelingprep.com/stable/earning-call-transcript-dates?symbol=${symbols[0]}&apikey=${PUBLIC_API_KEY}`
               : `https://financialmodelingprep.com/developer/docs/stable/earnings-transcript-list`;
             
             try {
-              const searchResults = [];
+              const allMentions: any[] = [];
+              let transcriptsAnalyzedCount = 0;
               
-              // For each symbol, get recent transcripts and search them
               for (const symbol of symbols) {
                 console.log(`🔍 Searching transcripts for ${symbol}`);
+                const transcriptDatesResult = await fmpClient.get("/earning-call-transcript-dates", { symbol });
+                if (!Array.isArray(transcriptDatesResult) || transcriptDatesResult.length === 0) continue;
                 
-                // Get available transcript dates
-                const transcriptDatesResult = await fmpClient.get("/earning-call-transcript-dates", { 
-                  symbol: symbol 
-                });
-                
-                if (!Array.isArray(transcriptDatesResult) || transcriptDatesResult.length === 0) {
-                  console.log(`⚠️ No transcript dates found for ${symbol}`);
-                  continue;
-                }
-                
-                // Get the most recent quarters (up to lookbackQuarters) - FIXED: removed broken filter
                 const recentDates = transcriptDatesResult.slice(0, lookbackQuarters);
                 
-                console.log(`📅 Found ${recentDates.length} recent quarters for ${symbol}`);
-                
-                // Fetch and search each transcript
                 for (const dateInfo of recentDates) {
                   try {
-                    console.log(`📄 Fetching ${symbol} transcript for:`, dateInfo);
-                    
                     const transcriptResult = await fmpClient.get("/earning-call-transcript", {
-                      symbol: symbol,
+                      symbol,
                       year: (dateInfo.fiscalYear || dateInfo.year).toString(),
                       quarter: dateInfo.quarter.toString()
                     });
                     
                     if (Array.isArray(transcriptResult) && transcriptResult.length > 0) {
-                      const transcript = transcriptResult[0];
-                      const content = transcript.content || "";
-                      
-                      // Search for topic mentions in the transcript
-                      const topicMentions = searchTranscriptContent(content, topic, executives, symbol, dateInfo);
+                      transcriptsAnalyzedCount++;
+                      const content = transcriptResult[0].content || "";
+                      const topicMentions = searchTranscriptContent(content, expandedTopics, executives, symbol, dateInfo);
                       
                       if (topicMentions.length > 0) {
-                        searchResults.push({
-                          symbol: symbol,
-                          year: dateInfo.year,
-                          quarter: dateInfo.quarter,
-                          date: transcript.date,
-                          mentions: topicMentions
+                        topicMentions.forEach(mention => {
+                          allMentions.push({
+                            ...mention,
+                            symbol: symbol,
+                            date: transcriptResult[0].date,
+                          });
                         });
                       }
                     }
                   } catch (transcriptError) {
-                    console.log(`⚠️ Error fetching transcript for ${symbol}:`, transcriptError);
+                     console.log(`⚠️ Error fetching transcript for ${symbol} Q${dateInfo.quarter} ${dateInfo.year}:`, transcriptError);
                   }
                 }
               }
+
+              // =================================================================
+              // ✨ AGGRESSIVE SUMMARIZATION LOGIC ✨
+              // =================================================================
+              console.log(`📊 Found ${allMentions.length} total potential mentions. Summarizing...`);
+              allMentions.sort((a, b) => a.score - b.score);
+
+              // Stricter limits to guarantee staying under the token limit
+              const MAX_MENTIONS_TO_RETURN = 15;
+              const SNIPPET_LENGTH = 200;
+
+              const summarizedMentions = allMentions.slice(0, MAX_MENTIONS_TO_RETURN).map(mention => ({
+                symbol: mention.symbol,
+                date: mention.date,
+                speaker: mention.speaker,
+                topic: mention.topic,
+                snippet: mention.context.substring(0, SNIPPET_LENGTH) + '...'
+              }));
               
+              console.log(`✅ Summarized to the top ${summarizedMentions.length} snippets.`);
+              
+              // This final, smaller object becomes the toolResult
               toolResult = {
-                query: {
-                  symbols: symbols,
-                  topic: topic,
-                  executives: executives,
-                  lookbackQuarters: lookbackQuarters
-                },
-                results: searchResults,
-                totalMatches: searchResults.reduce((sum, result) => sum + result.mentions.length, 0),
+                query: { symbols, topic, executives, lookbackQuarters },
+                resultsSummary: summarizedMentions,
+                totalMatchesFound: allMentions.length,
                 companiesSearched: symbols.length,
-                transcriptsAnalyzed: searchResults.length
+                transcriptsAnalyzed: transcriptsAnalyzedCount,
+                summary: `Found ${allMentions.length} potential mentions of "${topic}". Returning the top ${summarizedMentions.length} most relevant snippets.`
               };
               
             } catch (error) {
               console.error("❌ Error in searchTranscripts:", error);
-              toolResult = {
-                error: `Failed to search transcripts: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                query: { symbols, topic, executives, lookbackQuarters }
-              };
+              toolResult = { error: `Failed to search transcripts: ${error instanceof Error ? error.message : 'Unknown error'}`, query: { symbols, topic, executives, lookbackQuarters }};
             }
             break;
 
@@ -501,17 +512,12 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
             break;
             
           case "searchTranscripts":
+            // The result is already processed and summarized, just pass it through.
             if (typeof toolResult === 'object' && toolResult !== null && !toolResult.error) {
-              const result = toolResult as any;
               processedToolResult = {
-                query: result.query,
-                results: result.results,
-                totalMatches: result.totalMatches,
-                companiesSearched: result.companiesSearched,
-                transcriptsAnalyzed: result.transcriptsAnalyzed,
+                ...toolResult,
                 sourceUrl: sourceUrl,
-                toolDescription: "Multi-Transcript Search",
-                summary: `Found ${result.totalMatches} mentions of "${result.query.topic}" across ${result.transcriptsAnalyzed} transcripts from ${result.companiesSearched} companies`
+                toolDescription: "Multi-Transcript Search"
               };
             } else {
               processedToolResult = {
