@@ -14,6 +14,21 @@ A financial research assistant powered by a multi-step AI agent built with Next.
      alt="fin-agent-showcase"
      width="800" />
 
+## Meeting Goals
+
+The `fin-agent` was specifically architected to answer complex, multi-step financial questions. Here is a direct mapping of the example prompts to the features and tools built to solve them:
+
+| Assignment Prompt Example | How `fin-agent` Solves It | Key Technologies / Tools Used |
+| :--- | :--- | :--- |
+| `"Summarize Spotify's latest conference call."` | The agent resolves `Spotify` → `SPOT`, lists available transcripts, and fetches the latest one to summarize. | `resolveSymbol` → `getTranscript` |
+| `"What has Airbnb management said about profitability..."` | The agent uses the advanced `searchTranscripts` tool, which searches across multiple historical calls for a specific topic and provides a ranked summary of mentions. | `searchTranscripts`, AI Topic Expansion |
+| `"What are Mark Zuckerberg's and Satya Nadella's recent comments about AI?"` | This showcases the cross-company and executive-filtering capabilities of the `searchTranscripts` tool. The agent identifies both companies and executives in the prompt. | `searchTranscripts` (multi-company) |
+| `"How many new large deals did ServiceNow sign in the last quarter?"` | The agent uses `searchTranscripts` with a `lookbackQuarters=1` parameter to narrow the search to the most recent earnings call. | `searchTranscripts` (time-bound) |
+| `“What was Crowdstrike revenue in the past 3, 5, and 10 years”` | The agent resolves the company and uses the `getStatement` tool to fetch the income statement for the required number of years. | `resolveSymbol` → `getStatement` |
+| `“What was Crowdstrikes revenue growth in the past 3, 5, and 10 years”` | The agent uses the purpose-built `getFinancialGrowth` tool, demonstrating it can select the most efficient tool for a specific financial concept like "growth". | `resolveSymbol` → `getFinancialGrowth` |
+
+This agentic, tool-chaining approach ensures the system can robustly handle a wide variety of "random" companies and financial questions as required.
+
 ## Core Features
 
 *   **Agentic AI:** Unlike simple chatbots, fin-agent uses a multi-step "Planner" agent that can think, reason, and chain multiple tools together to answer complex queries.
@@ -73,6 +88,14 @@ This architecture ensures the application is not only functional but also clean,
 *   **Financial Data:** Financial Modeling Prep (FMP) API
 *   **Backend:** Next.js API Routes (Serverless Functions)
 *   **Linting/Formatting:** ESLint & Prettier
+
+## A Note on API Access and Citations
+
+This application was built using the public Financial Modeling Prep (FMP) API key provided in the assignment brief. Free-tier API keys have certain limitations (e.g., full data is often only available for a small set of symbols like `AAPL` or `MSFT`).
+
+**Therefore, while the citation links (`🔗`) in the chat interface are programmatically correct, they may not always resolve to a page with data.**
+
+The **purpose of this feature** is to demonstrate the architectural principle of **data source transparency**. Each citation link accurately reflects the specific API endpoint the AI agent called to get its information. In a production environment with a full-access enterprise API key, these links would seamlessly connect the user to the raw data source, enhancing trust and verifiability.
 
 ## Getting Started
 
