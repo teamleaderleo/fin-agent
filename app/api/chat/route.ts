@@ -6,6 +6,111 @@ import { fmpClient } from "@/lib/fmp_client";
 
 const PUBLIC_API_KEY = process.env.PUBLIC_API_KEY
 
+// Helper function to search transcript content for topics and executives
+function searchTranscriptContent(content: string, topic: string, executives: string[], symbol: string, dateInfo: any) {
+  interface TranscriptMention {
+    topic: string;
+    speaker: string;
+    context: string;
+    matchCount: number;
+    relevanceScore: number;
+  }
+
+  const mentions: TranscriptMention[] = [];
+  
+  if (!content || !topic) return mentions;
+  
+  // Split content into paragraphs for better context extraction
+  const paragraphs = content.split('\n').filter(p => p.trim().length > 50);
+  
+  // Create case-insensitive regex for topic search
+  const topicRegex = new RegExp(topic.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+  
+  // Search each paragraph for topic mentions
+  for (let i = 0; i < paragraphs.length; i++) {
+    const paragraph = paragraphs[i];
+    const matches = paragraph.match(topicRegex);
+    
+    if (matches && matches.length > 0) {
+      // Extract context (current paragraph + some surrounding context)
+      const contextStart = Math.max(0, i - 1);
+      const contextEnd = Math.min(paragraphs.length - 1, i + 1);
+      const context = paragraphs.slice(contextStart, contextEnd + 1).join('\n');
+      
+      // Try to identify the speaker if executives are specified
+      let speaker = "Unknown";
+      let executiveMatch = false;
+      
+      if (executives.length > 0) {
+        // Look for executive names in the current and surrounding paragraphs
+        const searchArea = paragraphs.slice(Math.max(0, i - 3), i + 1).join('\n');
+        
+        for (const exec of executives) {
+          const execRegex = new RegExp(exec.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+          if (execRegex.test(searchArea)) {
+            speaker = exec;
+            executiveMatch = true;
+            break;
+          }
+        }
+        
+        // If no specific executive match and we're filtering by executives, skip this mention
+        if (!executiveMatch && executives.length > 0) {
+          continue;
+        }
+      } else {
+        // Try to extract speaker from common patterns like "John Smith:" or "CEO:"
+        const speakerMatch = paragraph.match(/^([A-Z][a-zA-Z\s]+(?:CEO|CFO|President|Officer|Director)?)[:\-]/);
+        if (speakerMatch) {
+          speaker = speakerMatch[1].trim();
+        }
+      }
+      
+      mentions.push({
+        topic: topic,
+        speaker: speaker,
+        context: context.substring(0, 800), // Limit context length
+        matchCount: matches.length,
+        relevanceScore: calculateRelevanceScore(paragraph, topic, executives)
+      });
+    }
+  }
+  
+  // Sort by relevance score and return top mentions
+  return mentions.sort((a, b) => b.relevanceScore - a.relevanceScore).slice(0, 5);
+}
+
+// Helper function to calculate relevance score for ranking results
+function calculateRelevanceScore(text: string, topic: string, executives: string[]): number {
+  let score = 0;
+  
+  // Base score for topic mentions (10 points per mention)
+  const topicRegex = new RegExp(topic.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+  const topicMatches = text.match(topicRegex);
+  score += (topicMatches?.length || 0) * 10;
+  
+  // Bonus for executive mentions (20 points each)
+  for (const exec of executives) {
+    const execRegex = new RegExp(exec.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    if (execRegex.test(text)) {
+      score += 20;
+    }
+  }
+  
+  // Bonus for longer, more substantive content (up to 10 points)
+  score += Math.min(text.length / 100, 10);
+  
+  // Bonus for financial keywords that often accompany important statements (5 points each)
+  const financialKeywords = ['revenue', 'profit', 'growth', 'margin', 'outlook', 'guidance', 'strategy', 'investment', 'quarter', 'year'];
+  for (const keyword of financialKeywords) {
+    if (text.toLowerCase().includes(keyword)) {
+      score += 5;
+    }
+  }
+  
+  return score;
+}
+
 // Convert our tool definitions to OpenAI format
 const openaiTools = fmpFunctions.map(tool => ({
   type: "function" as const,
@@ -195,11 +300,94 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
           break;
 
         case "searchTranscripts":
-          sourceUrl = "Not implemented";
-          toolResult = {
-            error: "searchTranscripts not yet implemented",
-            suggestion: "Try asking about a specific earnings call using getTranscript"
-          };
+          console.log("🔍 Executing complex searchTranscripts logic");
+          
+          // Extract parameters
+          const symbols = Array.isArray(toolArgs.symbols) ? toolArgs.symbols : [toolArgs.symbols];
+          const topic = toolArgs.topic || "";
+          const executives = toolArgs.executives || [];
+          const lookbackQuarters = toolArgs.lookbackQuarters || 4;
+          
+          sourceUrl = `Multi-transcript search across ${symbols.join(', ')} for "${topic}"`;
+          
+          try {
+            const searchResults = [];
+            
+            // For each symbol, get recent transcripts and search them
+            for (const symbol of symbols) {
+              console.log(`🔍 Searching transcripts for ${symbol}`);
+              
+              // Get available transcript dates
+              const transcriptDatesResult = await fmpClient.get("/earning-call-transcript-dates", { 
+                symbol: symbol 
+              });
+              
+              if (!Array.isArray(transcriptDatesResult) || transcriptDatesResult.length === 0) {
+                console.log(`⚠️ No transcript dates found for ${symbol}`);
+                continue;
+              }
+              
+              // Get the most recent quarters (up to lookbackQuarters)
+              const recentDates = transcriptDatesResult
+                .slice(0, lookbackQuarters)
+                .filter(item => item.year && item.quarter);
+              
+              console.log(`📅 Found ${recentDates.length} recent quarters for ${symbol}`);
+              
+              // Fetch and search each transcript
+              for (const dateInfo of recentDates) {
+                try {
+                  console.log(`📄 Fetching ${symbol} Q${dateInfo.quarter} ${dateInfo.year} transcript`);
+                  
+                  const transcriptResult = await fmpClient.get("/earning-call-transcript", {
+                    symbol: symbol,
+                    year: dateInfo.year.toString(),
+                    quarter: dateInfo.quarter.toString()
+                  });
+                  
+                  if (Array.isArray(transcriptResult) && transcriptResult.length > 0) {
+                    const transcript = transcriptResult[0];
+                    const content = transcript.content || "";
+                    
+                    // Search for topic mentions in the transcript
+                    const topicMentions = searchTranscriptContent(content, topic, executives, symbol, dateInfo);
+                    
+                    if (topicMentions.length > 0) {
+                      searchResults.push({
+                        symbol: symbol,
+                        year: dateInfo.year,
+                        quarter: dateInfo.quarter,
+                        date: transcript.date,
+                        mentions: topicMentions
+                      });
+                    }
+                  }
+                } catch (transcriptError) {
+                  console.log(`⚠️ Error fetching transcript for ${symbol} Q${dateInfo.quarter} ${dateInfo.year}:`, transcriptError);
+                }
+              }
+            }
+            
+            toolResult = {
+              query: {
+                symbols: symbols,
+                topic: topic,
+                executives: executives,
+                lookbackQuarters: lookbackQuarters
+              },
+              results: searchResults,
+              totalMatches: searchResults.reduce((sum, result) => sum + result.mentions.length, 0),
+              companiesSearched: symbols.length,
+              transcriptsAnalyzed: searchResults.length
+            };
+            
+          } catch (error) {
+            console.error("❌ Error in searchTranscripts:", error);
+            toolResult = {
+              error: `Failed to search transcripts: ${error instanceof Error ? error.message : 'Unknown error'}`,
+              query: { symbols, topic, executives, lookbackQuarters }
+            };
+          }
           break;
 
         default:
@@ -305,6 +493,28 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
           }
           break;
           
+        case "searchTranscripts":
+          if (typeof toolResult === 'object' && toolResult !== null && !toolResult.error) {
+            const result = toolResult as any;
+            processedToolResult = {
+              query: result.query,
+              results: result.results,
+              totalMatches: result.totalMatches,
+              companiesSearched: result.companiesSearched,
+              transcriptsAnalyzed: result.transcriptsAnalyzed,
+              sourceUrl: sourceUrl,
+              toolDescription: "Multi-Transcript Search",
+              summary: `Found ${result.totalMatches} mentions of "${result.query.topic}" across ${result.transcriptsAnalyzed} transcripts from ${result.companiesSearched} companies`
+            };
+          } else {
+            processedToolResult = {
+              error: typeof toolResult === 'object' && toolResult !== null ? toolResult.error : 'Unknown error',
+              sourceUrl: sourceUrl,
+              toolDescription: "Multi-Transcript Search"
+            };
+          }
+          break;
+          
         // Keep other tools as-is for now
         default:
           if (typeof processedToolResult === 'object' && processedToolResult !== null) {
@@ -314,6 +524,7 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
               toolDescription: toolName // fallback to function name
             };
           }
+          break;
       }
 
       // Add this tool interaction to the conversation history
