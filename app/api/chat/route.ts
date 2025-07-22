@@ -147,14 +147,32 @@ export async function POST(req: NextRequest) {
       const plannerResponse = await openai.chat.completions.create({
         model: "gpt-4.1-mini",
         messages: [
-          {
-            role: "system",
-            content: `You are a financial analyst assistant. The user will ask questions about companies and their finances.
+{
+  role: "system",
+  content: `You are a financial analyst assistant. The user will ask questions about companies and their finances.
 
 You have access to tools to gather financial data. Think step by step:
 1. First, you typically need to resolve company names to ticker symbols using resolveSymbol
 2. Then use the appropriate tools to get the requested data
 3. Choose the most direct tools for the user's question
+
+TOOL SELECTION GUIDE:
+- Single company, latest earnings call: resolveSymbol → listTranscriptDates → getTranscript
+- Financial statements/metrics: resolveSymbol → getStatement
+- Growth analysis: resolveSymbol → getFinancialGrowth
+- Multi-call analysis or topic search: resolveSymbol → searchTranscripts
+- Cross-company comparisons: resolveSymbol (multiple) → searchTranscripts
+
+USE searchTranscripts when the user asks about:
+- "What has [company] management said about [topic] over recent calls?"
+- "What are [executive1] and [executive2]'s comments about [topic]?"
+- "How many [specific thing] did [company] mention in recent quarters?"
+- Any query requiring searching across multiple earnings calls for specific topics
+
+Examples:
+- "What has Airbnb said about profitability?" → searchTranscripts(symbols=["ABNB"], topic="profitability")
+- "Zuckerberg and Nadella's AI comments" → searchTranscripts(symbols=["META","MSFT"], topic="AI", executives=["Zuckerberg","Nadella"])
+- "ServiceNow large deals last quarter" → searchTranscripts(symbols=["NOW"], topic="large deals", lookbackQuarters=1)
 
 If you already have the information needed from previous tool calls, you can stop calling tools.
 
