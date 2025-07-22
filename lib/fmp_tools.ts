@@ -7,17 +7,17 @@ export const fmpFunctions = [
   /** 1️⃣  Resolve company/asset name → ticker */
   {
     name: "resolveSymbol",
-    description: "Converts a company's common name (e.g. 'Spotify') into its primary stock ticker symbol (e.g. 'SPOT'). First step for almost every query.",
-    endpoint: "/search-symbol?query={query}&limit=1",
+    description: "Converts a company's common name (e.g. 'Apple') into its primary stock ticker symbol (e.g. 'AAPL'). First step for almost every query.",
+    endpoint: "/search-name?query={query}&limit=1",
     method: "GET",
     parameters: {
       type: "object",
       properties: {
-        query: { type: "string", description: "Company name, e.g. 'Spotify' or 'CrowdStrike'" },
+        query: { type: "string", description: "Company name, e.g. 'Apple' or 'CrowdStrike'" },
       },
       required: ["query"],
     },
-    example_input: { query: "Spotify" },
+    example_input: { query: "Apple" },
   },
 
   /** 2️⃣  Enumerate available earnings-call transcript dates */

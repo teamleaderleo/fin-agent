@@ -75,10 +75,15 @@ Use tools whenever the user asks about specific companies or financial data.`
     // Execute the tool based on its name
     switch (toolName) {
       case "resolveSymbol":
-        toolResult = await fmpClient.get("/search-symbol", { 
+        console.log("🔍 Resolving symbol for:", toolArgs.query);
+        
+        // Use search-name endpoint for company names, not search-symbol
+        toolResult = await fmpClient.get("/search-name", { 
           query: toolArgs.query,
           limit: "1" 
         });
+        
+        console.log("🔍 Raw resolveSymbol result:", toolResult);
         break;
 
       case "listTranscriptDates":
