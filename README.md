@@ -4,30 +4,38 @@ A financial research assistant powered by a multi-step AI agent built with Next.
 
 **Live Demo:** https://fin-agent-one.vercel.app/
 
-![fin-agent-showcase](https://github.com/user-attachments/assets/3dfc5ed2-0390-4798-94d0-c83623155d61)
+**Poem Capabilities:**
 
-## ✨ Core Features
+<img width="1030" height="890" alt="write me a poem" src="https://github.com/user-attachments/assets/f7bd0677-5a4c-4a62-b7d5-9d394431e2d4" />
 
-*   **🧠 Agentic AI:** Unlike simple chatbots, fin-agent uses a multi-step "Planner" agent that can think, reason, and chain multiple tools together to answer complex queries.
-*   **🔌 Comprehensive Financial Tools:** Access a wide range of real-time financial data through integrated tools:
+**Gif Demo:**
+
+<img src="https://github.com/user-attachments/assets/3dfc5ed2-0390-4798-94d0-c83623155d61"
+     alt="fin-agent-showcase"
+     width="800" />
+
+## Core Features
+
+*   **Agentic AI:** Unlike simple chatbots, fin-agent uses a multi-step "Planner" agent that can think, reason, and chain multiple tools together to answer complex queries.
+*   **Comprehensive Financial Tools:** Access a wide range of real-time financial data through integrated tools:
     *   **Company Search:** Resolve company names to ticker symbols (`resolveSymbol`).
     *   **Stock Quotes:** Get the latest stock prices (`getQuote`).
     *   **Financial Statements:** Fetch income statements, balance sheets, and cash flow statements (`getStatement`).
     *   **Growth & Metrics:** Pull historical financial growth and key metrics (`getFinancialGrowth`, `getKeyMetrics`).
     *   **Earnings Transcripts:** Retrieve full earnings call transcripts by quarter and year (`getTranscript`).
-*   **🔍 Advanced Multi-Transcript Analysis:** The `searchTranscripts` tool is a powerhouse. It can:
+*   **Advanced Multi-Transcript Analysis:** The `searchTranscripts` tool is a powerhouse. It can:
     *   Search for specific topics across multiple earnings calls for one or more companies.
     *   Filter comments by specific executives (e.g., "What has Satya Nadella said about AI?").
     *   Use AI-powered topic expansion to find related keywords and improve search recall.
     *   Intelligently summarize and rank the most relevant mentions.
-*   **⚡ Streaming Responses:** Answers stream in token-by-token using Server-Sent Events (SSE) for a real-time, responsive user experience.
-*   **🔬 Reasoning Transparency:** Every AI-powered response includes a "Reasoning" dropdown that shows the exact tools the agent used, the parameters it chose, and the results it got back, providing full transparency into the AI's thought process.
-*   **💾 Persistent Chat History:** Conversations are automatically saved to `localStorage`, allowing you to manage multiple chats and pick up where you left off.
-*   **😎 Modern UI/UX:** A responsive interface with a dark mode toggle for comfortable viewing.
+*   **Streaming Responses:** Answers stream in token-by-token using Server-Sent Events (SSE) for a real-time, responsive user experience.
+*   **Reasoning Transparency:** Every AI-powered response includes a "Reasoning" dropdown that shows the exact tools the agent used, the parameters it chose, and the results it got back, providing full transparency into the AI's thought process.
+*   **Persistent Chat History:** Conversations are automatically saved to `localStorage`, allowing you to manage multiple chats and pick up where you left off.
+*   **Modern UI/UX:** A responsive interface with a dark mode toggle for comfortable viewing.
 
-## 🚀 Technical Showcase & Architecture
+## Technical Showcase & Architecture
 
-This project was architected with an emphasis on **separation of concerns**, **maintainability**, and **modern development patterns**.
+This project was made with **separation of concerns**, **maintainability**, and **modern development patterns** in mind.
 
 ### Backend: The Agentic Core (`/app/api/chat`)
 
@@ -56,7 +64,7 @@ The frontend was refactored from a single monolithic component into a scalable, 
 
 This architecture ensures the application is not only functional but also clean, testable, and easy to build upon.
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 *   **Framework:** Next.js 15 (App Router)
 *   **Language:** TypeScript
@@ -66,7 +74,7 @@ This architecture ensures the application is not only functional but also clean,
 *   **Backend:** Next.js API Routes (Serverless Functions)
 *   **Linting/Formatting:** ESLint & Prettier
 
-## ⚙️ Getting Started
+## Getting Started
 
 To run this project locally, follow these steps:
 
@@ -107,7 +115,7 @@ To run this project locally, follow these steps:
 
 5.  Open [http://localhost:3000](http://localhost:3000) in your browser to see the application.
 
-## 🔮 Future Improvements
+## Future Improvements
 
 While this is a fully functional application, here are a few ways it could be extended:
 
