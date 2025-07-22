@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { fmpFunctions } from "@/lib/fmp_tools";
 import { openai } from "@/lib/openai_client";
 import { fmpClient } from "@/lib/fmp_client";
+import Fuse from 'fuse.js';
 
 const PUBLIC_API_KEY = process.env.PUBLIC_API_KEY
 
@@ -13,7 +14,7 @@ function searchTranscriptContent(content: string, topic: string, executives: str
     speaker: string;
     context: string;
     matchCount: number;
-    relevanceScore: number;
+    score: number; // Fuse.js score
   }
 
   const mentions: TranscriptMention[] = [];
@@ -21,94 +22,80 @@ function searchTranscriptContent(content: string, topic: string, executives: str
   if (!content || !topic) return mentions;
   
   // Split content into paragraphs for better context extraction
-  const paragraphs = content.split('\n').filter(p => p.trim().length > 50);
+  const paragraphs = content.split('\n')
+    .filter(p => p.trim().length > 50)
+    .map((text, index) => ({ text, index }));
   
-  // Create case-insensitive regex for topic search
-  const topicRegex = new RegExp(topic.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+  // Configure Fuse.js for fuzzy search
+  const fuse = new Fuse(paragraphs, {
+    keys: ['text'],
+    threshold: 0.3, // 0 = exact match, 1 = match anything
+    includeScore: true,
+    minMatchCharLength: 3,
+    ignoreLocation: true
+  });
   
-  // Search each paragraph for topic mentions
-  for (let i = 0; i < paragraphs.length; i++) {
-    const paragraph = paragraphs[i];
-    const matches = paragraph.match(topicRegex);
+  // Search for topic mentions
+  const results = fuse.search(topic);
+  
+  console.log(`🔍 Fuzzy search found ${results.length} matches for "${topic}" in ${symbol}`);
+  
+  for (const result of results.slice(0, 8)) { // Top 8 matches
+    const paragraph = result.item.text;
+    const paragraphIndex = result.item.index;
+    const score = result.score || 0;
     
-    if (matches && matches.length > 0) {
-      // Extract context (current paragraph + some surrounding context)
-      const contextStart = Math.max(0, i - 1);
-      const contextEnd = Math.min(paragraphs.length - 1, i + 1);
-      const context = paragraphs.slice(contextStart, contextEnd + 1).join('\n');
+    // Extract context (current paragraph + surrounding ones)
+    const contextStart = Math.max(0, paragraphIndex - 1);
+    const contextEnd = Math.min(paragraphs.length - 1, paragraphIndex + 1);
+    const context = paragraphs.slice(contextStart, contextEnd + 1)
+      .map(p => p.text)
+      .join('\n');
+    
+    // Try to identify the speaker
+    let speaker = "Unknown";
+    let executiveMatch = false;
+    
+    if (executives.length > 0) {
+      // Look for executive names in surrounding paragraphs
+      const searchArea = paragraphs.slice(Math.max(0, paragraphIndex - 3), paragraphIndex + 1)
+        .map(p => p.text)
+        .join('\n');
       
-      // Try to identify the speaker if executives are specified
-      let speaker = "Unknown";
-      let executiveMatch = false;
-      
-      if (executives.length > 0) {
-        // Look for executive names in the current and surrounding paragraphs
-        const searchArea = paragraphs.slice(Math.max(0, i - 3), i + 1).join('\n');
-        
-        for (const exec of executives) {
-          const execRegex = new RegExp(exec.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-          if (execRegex.test(searchArea)) {
-            speaker = exec;
-            executiveMatch = true;
-            break;
-          }
-        }
-        
-        // If no specific executive match and we're filtering by executives, skip this mention
-        if (!executiveMatch && executives.length > 0) {
-          continue;
-        }
-      } else {
-        // Try to extract speaker from common patterns like "John Smith:" or "CEO:"
-        const speakerMatch = paragraph.match(/^([A-Z][a-zA-Z\s]+(?:CEO|CFO|President|Officer|Director)?)[:\-]/);
-        if (speakerMatch) {
-          speaker = speakerMatch[1].trim();
+      for (const exec of executives) {
+        const execRegex = new RegExp(exec.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+        if (execRegex.test(searchArea)) {
+          speaker = exec;
+          executiveMatch = true;
+          break;
         }
       }
       
-      mentions.push({
-        topic: topic,
-        speaker: speaker,
-        context: context.substring(0, 800), // Limit context length
-        matchCount: matches.length,
-        relevanceScore: calculateRelevanceScore(paragraph, topic, executives)
-      });
+      // If filtering by executives and no match, skip
+      if (!executiveMatch) continue;
+    } else {
+      // Try to extract speaker from common patterns
+      const speakerMatch = paragraph.match(/^([A-Z][a-zA-Z\s]+(?:CEO|CFO|President|Officer|Director)?)[:\-]/);
+      if (speakerMatch) {
+        speaker = speakerMatch[1].trim();
+      }
     }
+    
+    mentions.push({
+      topic: topic,
+      speaker: speaker,
+      context: context.substring(0, 800),
+      matchCount: 1, // Fuse doesn't give exact match counts
+      score: score
+    });
+    
+    console.log(`✅ Found fuzzy match (score: ${score.toFixed(3)}): "${paragraph.substring(0, 100)}..." by ${speaker}`);
   }
   
-  // Sort by relevance score and return top mentions
-  return mentions.sort((a, b) => b.relevanceScore - a.relevanceScore).slice(0, 5);
-}
-
-// Helper function to calculate relevance score for ranking results
-function calculateRelevanceScore(text: string, topic: string, executives: string[]): number {
-  let score = 0;
+  console.log(`📊 Total mentions found: ${mentions.length}`);
   
-  // Base score for topic mentions (10 points per mention)
-  const topicRegex = new RegExp(topic.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
-  const topicMatches = text.match(topicRegex);
-  score += (topicMatches?.length || 0) * 10;
-  
-  // Bonus for executive mentions (20 points each)
-  for (const exec of executives) {
-    const execRegex = new RegExp(exec.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-    if (execRegex.test(text)) {
-      score += 20;
-    }
-  }
-  
-  // Bonus for longer, more substantive content (up to 10 points)
-  score += Math.min(text.length / 100, 10);
-  
-  // Bonus for financial keywords that often accompany important statements (5 points each)
-  const financialKeywords = ['revenue', 'profit', 'growth', 'margin', 'outlook', 'guidance', 'strategy', 'investment', 'quarter', 'year'];
-  for (const keyword of financialKeywords) {
-    if (text.toLowerCase().includes(keyword)) {
-      score += 5;
-    }
-  }
-  
-  return score;
+  // Sort by Fuse.js score (lower = better match)
+  return mentions.sort((a, b) => a.score - b.score).slice(0, 5);
 }
 
 // Convert our tool definitions to OpenAI format
