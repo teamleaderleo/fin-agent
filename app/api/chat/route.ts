@@ -315,7 +315,9 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
             const executives = toolArgs.executives || [];
             const lookbackQuarters = toolArgs.lookbackQuarters || 4;
             
-            sourceUrl = `Multi-transcript search across ${symbols.join(', ')} for "${topic}"`;
+            sourceUrl = symbols.length === 1 
+              ? `https://financialmodelingprep.com/stable/earning-call-transcript-dates?symbol=${symbols[0]}&apikey=${PUBLIC_API_KEY}`
+              : `https://financialmodelingprep.com/developer/docs/stable/earnings-transcript-list`;
             
             try {
               const searchResults = [];
