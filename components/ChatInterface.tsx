@@ -147,46 +147,53 @@ export default function ChatInterface() {
                 
                 {/* Reasoning Bar (top of assistant messages, like Claude) */}
                 {msg.role === 'assistant' && msg.reasoning && msg.reasoning.length > 0 && (
-                  <div 
-                    onClick={() => setExpandedReasoning(expandedReasoning === idx ? null : idx)}
-                    className="cursor-pointer bg-white/40 backdrop-blur-sm border border-gray-200/50 rounded-lg px-3 py-2 hover:bg-white/60 transition-all duration-200 select-none"
-                  >
-                    <div className="flex items-center justify-between text-sm text-gray-600">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs">🧠</span>
-                        <span>Used {msg.stepCount} reasoning steps</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span className="text-xs text-gray-400">Click to expand</span>
-                        <span className={`transform transition-transform text-gray-400 ${expandedReasoning === idx ? 'rotate-180' : ''}`}>
-                          ▼
-                        </span>
+                  <div className="bg-white/40 backdrop-blur-sm border border-gray-200/50 rounded-lg overflow-hidden">
+                    {/* Clickable Header */}
+                    <div 
+                      onClick={() => setExpandedReasoning(expandedReasoning === idx ? null : idx)}
+                      className="cursor-pointer px-3 py-2 hover:bg-white/60 transition-all duration-200 select-none"
+                    >
+                      <div className="flex items-center justify-between text-sm text-gray-600">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs">🧠</span>
+                          <span>Used {msg.stepCount} reasoning steps</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-gray-400">Click to expand</span>
+                          <span className={`transform transition-transform text-gray-400 ${expandedReasoning === idx ? 'rotate-180' : ''}`}>
+                            ▼
+                          </span>
+                        </div>
                       </div>
                     </div>
                     
+                    {/* Expandable Content - NOT clickable, text is selectable */}
                     {expandedReasoning === idx && (
-                      <div className="mt-3 pt-3 border-t border-gray-200/50 space-y-3">
+                      <div className="px-3 pb-3 pt-0 border-t border-gray-200/50 space-y-3 select-text">
                         {msg.reasoning.map((step, stepIdx) => (
                           <div key={stepIdx} className="text-xs">
                             <div className="flex items-start gap-2 mb-1">
-                              <span className="text-gray-400 font-mono mt-0.5">
+                              <span className="text-gray-400 font-mono mt-0.5 select-none">
                                 {step.step}.
                               </span>
                               <div className="flex-1">
                                 <div className="font-medium text-gray-700 flex items-center gap-1">
-                                  {step.type === 'planning' && '🧠 Planning next action'}
-                                  {step.type === 'tool_execution' && `🚀 Executing ${step.toolName}`}
-                                  {step.type === 'tool_result' && `✅ Got result from ${step.toolName}`}
-                                  {step.type === 'completion' && '🏁 Agent finished'}
+                                  {step.type === 'tool_step' && `🚀 ${step.toolName}`}
+                                  {step.type === 'completion' && '🏁 Finished'}
                                 </div>
                                 {step.toolArgs && (
-                                  <div className="text-gray-500 mt-0.5 font-mono">
-                                    {JSON.stringify(step.toolArgs)}
+                                  <div className="text-gray-500 mt-0.5 font-mono text-xs">
+                                    {JSON.stringify(step.toolArgs, null, 2)}
                                   </div>
                                 )}
-                                {step.resultPreview && (
+                                {step.result && (
                                   <div className="text-gray-500 mt-0.5">
-                                    → {step.resultPreview}
+                                    → {step.result.preview}
+                                  </div>
+                                )}
+                                {step.message && step.type === 'completion' && (
+                                  <div className="text-gray-500 mt-0.5 italic">
+                                    {step.message}
                                   </div>
                                 )}
                               </div>

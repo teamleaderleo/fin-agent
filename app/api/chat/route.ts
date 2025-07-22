@@ -33,6 +33,7 @@ export async function POST(req: NextRequest) {
     const conversationHistory = [...messages];
     const allToolsUsed: string[] = [];
     const reasoningTrace: any[] = [];
+    let toolStepCounter = 0;
     const maxSteps = 5; // Prevent infinite loops
     
     for (let step = 0; step < maxSteps; step++) {
@@ -68,25 +69,17 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
         content: plannerDecision.content?.substring(0, 100)
       });
 
-      // Add to reasoning trace
-      reasoningTrace.push({
-        step: step + 1,
-        type: 'planning',
-        timestamp: new Date().toISOString(),
-        hasToolCalls: !!plannerDecision.tool_calls,
-        toolCallsCount: plannerDecision.tool_calls?.length || 0,
-        content: plannerDecision.content
-      });
-
       // If no tool call, we're done with the agent loop
       if (!plannerDecision.tool_calls || plannerDecision.tool_calls.length === 0) {
         console.log(`✅ Step ${step + 1}: Agent finished. No more tools needed.`);
-        reasoningTrace.push({
-          step: step + 1,
-          type: 'completion',
-          timestamp: new Date().toISOString(),
-          message: 'Agent finished. No more tools needed.'
-        });
+        if (toolStepCounter > 0) { // Only add completion step if we actually executed tools
+          reasoningTrace.push({
+            step: toolStepCounter + 1,
+            type: 'completion',
+            timestamp: new Date().toISOString(),
+            message: 'Agent finished - no more tools needed'
+          });
+        }
         break;
       }
 
@@ -97,16 +90,19 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
 
       console.log(`🚀 Step ${step + 1}: Executing '${toolName}' with args:`, toolArgs);
       allToolsUsed.push(toolName);
+      toolStepCounter++; // Only increment when we actually execute a tool
 
-      // Add to reasoning trace
-      reasoningTrace.push({
-        step: step + 1,
-        type: 'tool_execution',
+      // Add to reasoning trace - combine execution and result in one step
+      const toolStep = {
+        step: toolStepCounter,
+        type: 'tool_step',
         timestamp: new Date().toISOString(),
         toolName: toolName,
         toolArgs: toolArgs,
-        message: `Executing ${toolName}`
-      });
+        result: null as any // Will be filled after execution
+      };
+
+      reasoningTrace.push(toolStep);
 
       // =================================================================
       // TOOL EXECUTOR - Execute the chosen tool
@@ -221,16 +217,16 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
       );
 
       // Add to reasoning trace
-      reasoningTrace.push({
-        step: step + 1,
-        type: 'tool_result',
-        timestamp: new Date().toISOString(),
-        toolName: toolName,
-        success: !toolResult || (typeof toolResult === 'object' && toolResult !== null && 'error' in toolResult ? !(toolResult as { error?: unknown }).error : true),
-        resultPreview: typeof toolResult === 'object' && toolResult !== null 
-          ? `Object with ${Object.keys(toolResult).length} keys`
-          : String(toolResult).substring(0, 100)
-      });
+      const currentStep = reasoningTrace[reasoningTrace.length - 1];
+      if (currentStep && currentStep.step === toolStepCounter) {
+        // Update the current step with the result
+        currentStep.result = {
+          success: !toolResult || (typeof toolResult === 'object' && !toolResult.error),
+          preview: typeof toolResult === 'object' && toolResult !== null 
+            ? `Object with ${Object.keys(toolResult).length} keys`
+            : String(toolResult).substring(0, 100)
+        };
+      }
 
       // =================================================================
       // TOOL RESULT PROCESSOR - Clean up results for better parsing
