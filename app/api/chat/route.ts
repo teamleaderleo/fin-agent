@@ -206,355 +206,367 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
         break;
       }
 
-      // Process the first tool call (OpenAI typically returns one at a time in this pattern)
-      const toolCall = plannerDecision.tool_calls[0];
-      const toolName = toolCall.function.name;
-      const toolArgs = JSON.parse(toolCall.function.arguments);
+      // Process ALL tool calls (OpenAI can return multiple at once)
+      const toolResponses = [];
+      
+      for (const toolCall of plannerDecision.tool_calls) {
+        const toolName = toolCall.function.name;
+        const toolArgs = JSON.parse(toolCall.function.arguments);
 
-      console.log(`🚀 Step ${step + 1}: Executing '${toolName}' with args:`, toolArgs);
-      allToolsUsed.push(toolName);
-      toolStepCounter++; // Only increment when we actually execute a tool
+        console.log(`🚀 Step ${step + 1}: Executing '${toolName}' with args:`, toolArgs);
+        allToolsUsed.push(toolName);
+        toolStepCounter++; // Only increment when we actually execute a tool
 
-      // Add to reasoning trace - combine execution and result in one step
-      const toolStep = {
-        step: toolStepCounter,
-        type: 'tool_step',
-        timestamp: new Date().toISOString(),
-        toolName: toolName,
-        toolArgs: toolArgs,
-        result: null as any // Will be filled after execution
-      };
+        // Add to reasoning trace - combine execution and result in one step
+        const toolStep = {
+          step: toolStepCounter,
+          type: 'tool_step',
+          timestamp: new Date().toISOString(),
+          toolName: toolName,
+          toolArgs: toolArgs,
+          result: null as any // Will be filled after execution
+        };
 
-      reasoningTrace.push(toolStep);
+        reasoningTrace.push(toolStep);
 
-      // =================================================================
-      // TOOL EXECUTOR - Execute the chosen tool
-      // =================================================================
-      let toolResult: unknown;
-      let sourceUrl: string = "";
+        // =================================================================
+        // TOOL EXECUTOR - Execute the chosen tool
+        // =================================================================
+        let toolResult: unknown;
+        let sourceUrl: string = "";
 
-      switch (toolName) {
-        case "resolveSymbol":
-          sourceUrl = `https://financialmodelingprep.com/stable/search-name?query=${encodeURIComponent(toolArgs.query)}&limit=10&apikey=${PUBLIC_API_KEY}`;
-          toolResult = await fmpClient.get("/search-name", { 
-            query: toolArgs.query,
-            limit: "10"
-          });
-          break;
+        switch (toolName) {
+          case "resolveSymbol":
+            sourceUrl = `https://financialmodelingprep.com/stable/search-name?query=${encodeURIComponent(toolArgs.query)}&limit=10&apikey=${PUBLIC_API_KEY}`;
+            toolResult = await fmpClient.get("/search-name", { 
+              query: toolArgs.query,
+              limit: "10"
+            });
+            break;
 
-        case "listTranscriptDates":
-          sourceUrl = `https://financialmodelingprep.com/stable/earning-call-transcript-dates?symbol=${toolArgs.symbol}&apikey=${PUBLIC_API_KEY}`;
-          toolResult = await fmpClient.get("/earning-call-transcript-dates", { 
-            symbol: toolArgs.symbol 
-          });
-          break;
+          case "listTranscriptDates":
+            sourceUrl = `https://financialmodelingprep.com/stable/earning-call-transcript-dates?symbol=${toolArgs.symbol}&apikey=${PUBLIC_API_KEY}`;
+            toolResult = await fmpClient.get("/earning-call-transcript-dates", { 
+              symbol: toolArgs.symbol 
+            });
+            break;
 
-        case "getTranscript":
-          sourceUrl = `https://financialmodelingprep.com/stable/earning-call-transcript?symbol=${toolArgs.symbol}&year=${toolArgs.year}&quarter=${toolArgs.quarter}&apikey=${PUBLIC_API_KEY}`;
-          toolResult = await fmpClient.get("/earning-call-transcript", {
-            symbol: toolArgs.symbol,
-            year: toolArgs.year,
-            quarter: toolArgs.quarter
-          });
-          break;
+          case "getTranscript":
+            sourceUrl = `https://financialmodelingprep.com/stable/earning-call-transcript?symbol=${toolArgs.symbol}&year=${toolArgs.year}&quarter=${toolArgs.quarter}&apikey=${PUBLIC_API_KEY}`;
+            toolResult = await fmpClient.get("/earning-call-transcript", {
+              symbol: toolArgs.symbol,
+              year: toolArgs.year,
+              quarter: toolArgs.quarter
+            });
+            break;
 
-        case "getStatement":
-          const statementEndpoint = `/${toolArgs.statement}-statement`;
-          const period = toolArgs.period || 'annual';
-          const limit = toolArgs.limit || 5;
-          sourceUrl = `https://financialmodelingprep.com/stable${statementEndpoint}?symbol=${toolArgs.symbol}&period=${period}&limit=${limit}&apikey=${PUBLIC_API_KEY}`;
-          toolResult = await fmpClient.get(statementEndpoint, {
-            symbol: toolArgs.symbol,
-            period: period,
-            limit: limit.toString()
-          });
-          break;
+          case "getStatement":
+            const statementEndpoint = `/${toolArgs.statement}-statement`;
+            const period = toolArgs.period || 'annual';
+            const limit = toolArgs.limit || 5;
+            sourceUrl = `https://financialmodelingprep.com/stable${statementEndpoint}?symbol=${toolArgs.symbol}&period=${period}&limit=${limit}&apikey=${PUBLIC_API_KEY}`;
+            toolResult = await fmpClient.get(statementEndpoint, {
+              symbol: toolArgs.symbol,
+              period: period,
+              limit: limit.toString()
+            });
+            break;
 
-        case "getFinancialGrowth":
-          const growthLimit = (Math.max(...(toolArgs.years || [10])) + 1).toString();
-          sourceUrl = `https://financialmodelingprep.com/stable/financial-growth?symbol=${toolArgs.symbol}&period=${toolArgs.period || 'annual'}&limit=${growthLimit}&apikey=${PUBLIC_API_KEY}`;
-          toolResult = await fmpClient.get("/financial-growth", {
-            symbol: toolArgs.symbol,
-            period: toolArgs.period || 'annual',
-            limit: growthLimit
-          });
-          
-          // Add metadata about what was requested
-          toolResult = {
-            symbol: toolArgs.symbol,
-            metric: toolArgs.metric,
-            requestedYears: toolArgs.years,
-            rawData: toolResult
-          };
-          break;
-
-        case "getKeyMetrics":
-          const metricsLimit = toolArgs.limit || 5;
-          sourceUrl = `https://financialmodelingprep.com/stable/key-metrics?symbol=${toolArgs.symbol}&period=annual&limit=${metricsLimit}&apikey=${PUBLIC_API_KEY}`;
-          toolResult = await fmpClient.get("/key-metrics", {
-            symbol: toolArgs.symbol,
-            period: 'annual',
-            limit: metricsLimit.toString()
-          });
-          break;
-
-        case "searchNews":
-          const symbolsString = Array.isArray(toolArgs.symbols) 
-            ? toolArgs.symbols.join(',') 
-            : toolArgs.symbols;
-          const newsLimit = toolArgs.limit || 20;
-          sourceUrl = `https://financialmodelingprep.com/stable/news/stock?symbols=${symbolsString}&limit=${newsLimit}&apikey=${PUBLIC_API_KEY}`;
-          toolResult = await fmpClient.get("/news/stock", {
-            symbols: symbolsString,
-            limit: newsLimit.toString()
-          });
-          break;
-
-        case "getQuote":
-          sourceUrl = `https://financialmodelingprep.com/stable/quote?symbol=${toolArgs.symbol}&apikey=${PUBLIC_API_KEY}`;
-          toolResult = await fmpClient.get("/quote", { 
-            symbol: toolArgs.symbol 
-          });
-          break;
-
-        case "searchTranscripts":
-          console.log("🔍 Executing complex searchTranscripts logic");
-          
-          // Extract parameters
-          const symbols = Array.isArray(toolArgs.symbols) ? toolArgs.symbols : [toolArgs.symbols];
-          const topic = toolArgs.topic || "";
-          const executives = toolArgs.executives || [];
-          const lookbackQuarters = toolArgs.lookbackQuarters || 4;
-          
-          sourceUrl = `Multi-transcript search across ${symbols.join(', ')} for "${topic}"`;
-          
-          try {
-            const searchResults = [];
+          case "getFinancialGrowth":
+            const growthLimit = (Math.max(...(toolArgs.years || [10])) + 1).toString();
+            sourceUrl = `https://financialmodelingprep.com/stable/financial-growth?symbol=${toolArgs.symbol}&period=${toolArgs.period || 'annual'}&limit=${growthLimit}&apikey=${PUBLIC_API_KEY}`;
+            toolResult = await fmpClient.get("/financial-growth", {
+              symbol: toolArgs.symbol,
+              period: toolArgs.period || 'annual',
+              limit: growthLimit
+            });
             
-            // For each symbol, get recent transcripts and search them
-            for (const symbol of symbols) {
-              console.log(`🔍 Searching transcripts for ${symbol}`);
+            // Add metadata about what was requested
+            toolResult = {
+              symbol: toolArgs.symbol,
+              metric: toolArgs.metric,
+              requestedYears: toolArgs.years,
+              rawData: toolResult
+            };
+            break;
+
+          case "getKeyMetrics":
+            const metricsLimit = toolArgs.limit || 5;
+            sourceUrl = `https://financialmodelingprep.com/stable/key-metrics?symbol=${toolArgs.symbol}&period=annual&limit=${metricsLimit}&apikey=${PUBLIC_API_KEY}`;
+            toolResult = await fmpClient.get("/key-metrics", {
+              symbol: toolArgs.symbol,
+              period: 'annual',
+              limit: metricsLimit.toString()
+            });
+            break;
+
+          case "searchNews":
+            const symbolsString = Array.isArray(toolArgs.symbols) 
+              ? toolArgs.symbols.join(',') 
+              : toolArgs.symbols;
+            const newsLimit = toolArgs.limit || 20;
+            sourceUrl = `https://financialmodelingprep.com/stable/news/stock?symbols=${symbolsString}&limit=${newsLimit}&apikey=${PUBLIC_API_KEY}`;
+            toolResult = await fmpClient.get("/news/stock", {
+              symbols: symbolsString,
+              limit: newsLimit.toString()
+            });
+            break;
+
+          case "getQuote":
+            sourceUrl = `https://financialmodelingprep.com/stable/quote?symbol=${toolArgs.symbol}&apikey=${PUBLIC_API_KEY}`;
+            toolResult = await fmpClient.get("/quote", { 
+              symbol: toolArgs.symbol 
+            });
+            break;
+
+          case "searchTranscripts":
+            console.log("🔍 Executing complex searchTranscripts logic");
+            
+            // Extract parameters
+            const symbols = Array.isArray(toolArgs.symbols) ? toolArgs.symbols : [toolArgs.symbols];
+            const topic = toolArgs.topic || "";
+            const executives = toolArgs.executives || [];
+            const lookbackQuarters = toolArgs.lookbackQuarters || 4;
+            
+            sourceUrl = `Multi-transcript search across ${symbols.join(', ')} for "${topic}"`;
+            
+            try {
+              const searchResults = [];
               
-              // Get available transcript dates
-              const transcriptDatesResult = await fmpClient.get("/earning-call-transcript-dates", { 
-                symbol: symbol 
-              });
-              
-              if (!Array.isArray(transcriptDatesResult) || transcriptDatesResult.length === 0) {
-                console.log(`⚠️ No transcript dates found for ${symbol}`);
-                continue;
-              }
-              
-              // Get the most recent quarters (up to lookbackQuarters)
-              const recentDates = transcriptDatesResult.slice(0, lookbackQuarters);
-              
-              console.log(`📅 Found ${recentDates.length} recent quarters for ${symbol}`);
-              
-              // Fetch and search each transcript
-              for (const dateInfo of recentDates) {
-                try {
-                  console.log(`📄 Fetching ${symbol} transcript for:`, dateInfo);
-                  
-                  const transcriptResult = await fmpClient.get("/earning-call-transcript", {
-                    symbol: symbol,
-                    year: dateInfo.year ? dateInfo.year.toString() : dateInfo.year,
-                    quarter: dateInfo.quarter ? dateInfo.quarter.toString() : dateInfo.quarter
-                  });
-                  
-                  if (Array.isArray(transcriptResult) && transcriptResult.length > 0) {
-                    const transcript = transcriptResult[0];
-                    const content = transcript.content || "";
+              // For each symbol, get recent transcripts and search them
+              for (const symbol of symbols) {
+                console.log(`🔍 Searching transcripts for ${symbol}`);
+                
+                // Get available transcript dates
+                const transcriptDatesResult = await fmpClient.get("/earning-call-transcript-dates", { 
+                  symbol: symbol 
+                });
+                
+                if (!Array.isArray(transcriptDatesResult) || transcriptDatesResult.length === 0) {
+                  console.log(`⚠️ No transcript dates found for ${symbol}`);
+                  continue;
+                }
+                
+                // Get the most recent quarters (up to lookbackQuarters) - FIXED: removed broken filter
+                const recentDates = transcriptDatesResult.slice(0, lookbackQuarters);
+                
+                console.log(`📅 Found ${recentDates.length} recent quarters for ${symbol}`);
+                
+                // Fetch and search each transcript
+                for (const dateInfo of recentDates) {
+                  try {
+                    console.log(`📄 Fetching ${symbol} transcript for:`, dateInfo);
                     
-                    // Search for topic mentions in the transcript
-                    const topicMentions = searchTranscriptContent(content, topic, executives, symbol, dateInfo);
+                    const transcriptResult = await fmpClient.get("/earning-call-transcript", {
+                      symbol: symbol,
+                      year: dateInfo.year ? dateInfo.year.toString() : dateInfo.year,
+                      quarter: dateInfo.quarter ? dateInfo.quarter.toString() : dateInfo.quarter
+                    });
                     
-                    if (topicMentions.length > 0) {
-                      searchResults.push({
-                        symbol: symbol,
-                        year: dateInfo.year,
-                        quarter: dateInfo.quarter,
-                        date: transcript.date,
-                        mentions: topicMentions
-                      });
+                    if (Array.isArray(transcriptResult) && transcriptResult.length > 0) {
+                      const transcript = transcriptResult[0];
+                      const content = transcript.content || "";
+                      
+                      // Search for topic mentions in the transcript
+                      const topicMentions = searchTranscriptContent(content, topic, executives, symbol, dateInfo);
+                      
+                      if (topicMentions.length > 0) {
+                        searchResults.push({
+                          symbol: symbol,
+                          year: dateInfo.year,
+                          quarter: dateInfo.quarter,
+                          date: transcript.date,
+                          mentions: topicMentions
+                        });
+                      }
                     }
+                  } catch (transcriptError) {
+                    console.log(`⚠️ Error fetching transcript for ${symbol}:`, transcriptError);
                   }
-                } catch (transcriptError) {
-                  console.log(`⚠️ Error fetching transcript for ${symbol}:`, transcriptError);
                 }
               }
+              
+              toolResult = {
+                query: {
+                  symbols: symbols,
+                  topic: topic,
+                  executives: executives,
+                  lookbackQuarters: lookbackQuarters
+                },
+                results: searchResults,
+                totalMatches: searchResults.reduce((sum, result) => sum + result.mentions.length, 0),
+                companiesSearched: symbols.length,
+                transcriptsAnalyzed: searchResults.length
+              };
+              
+            } catch (error) {
+              console.error("❌ Error in searchTranscripts:", error);
+              toolResult = {
+                error: `Failed to search transcripts: ${error instanceof Error ? error.message : 'Unknown error'}`,
+                query: { symbols, topic, executives, lookbackQuarters }
+              };
             }
-            
-            toolResult = {
-              query: {
-                symbols: symbols,
-                topic: topic,
-                executives: executives,
-                lookbackQuarters: lookbackQuarters
-              },
-              results: searchResults,
-              totalMatches: searchResults.reduce((sum, result) => sum + result.mentions.length, 0),
-              companiesSearched: symbols.length,
-              transcriptsAnalyzed: searchResults.length
-            };
-            
-          } catch (error) {
-            console.error("❌ Error in searchTranscripts:", error);
-            toolResult = {
-              error: `Failed to search transcripts: ${error instanceof Error ? error.message : 'Unknown error'}`,
-              query: { symbols, topic, executives, lookbackQuarters }
-            };
-          }
-          break;
+            break;
 
-        default:
-          console.error(`❌ Unknown tool called: ${toolName}`);
-          sourceUrl = "Unknown tool";
-          toolResult = { error: `Unknown tool: ${toolName}` };
+          default:
+            console.error(`❌ Unknown tool called: ${toolName}`);
+            sourceUrl = "Unknown tool";
+            toolResult = { error: `Unknown tool: ${toolName}` };
+        }
+
+        console.log(`✅ Tool result preview:`, 
+          typeof toolResult === 'object' && toolResult !== null 
+            ? Object.keys(toolResult).length > 0 
+              ? `Object with keys: ${Object.keys(toolResult).join(', ')}` 
+              : 'Empty object'
+            : toolResult
+        );
+
+        // Add to reasoning trace
+        const currentStep = reasoningTrace[reasoningTrace.length - 1];
+        if (currentStep && currentStep.step === toolStepCounter) {
+          // Update the current step with the result
+          currentStep.result = {
+            success: !toolResult || (typeof toolResult === 'object' && !toolResult.error),
+            preview: typeof toolResult === 'object' && toolResult !== null 
+              ? `Object with ${Object.keys(toolResult).length} keys`
+              : String(toolResult).substring(0, 100)
+          };
+        }
+
+        // =================================================================
+        // TOOL RESULT PROCESSOR - Clean up results for better parsing
+        // =================================================================
+        let processedToolResult = toolResult;
+
+        switch (toolName) {
+          case "resolveSymbol":
+            if (Array.isArray(toolResult) && toolResult.length > 0) {
+              const usExchanges = ['NASDAQ', 'NYSE', 'AMEX'];
+              let bestResult = toolResult.find(result => 
+                usExchanges.includes(result.exchange) && 
+                result.currency === 'USD' &&
+                !result.symbol.includes('.')
+              );
+              if (!bestResult) bestResult = toolResult[0];
+              
+              processedToolResult = {
+                query: toolArgs.query,
+                found: true,
+                ticker: bestResult.symbol,
+                companyName: bestResult.name,
+                exchange: bestResult.exchange,
+                currency: bestResult.currency,
+                sourceUrl: sourceUrl,
+                toolDescription: "Company Search",
+                message: `Found ticker symbol: ${bestResult.symbol} for ${bestResult.name} on ${bestResult.exchange}`
+              };
+            } else {
+              processedToolResult = {
+                query: toolArgs.query,
+                found: false,
+                sourceUrl: sourceUrl,
+                toolDescription: "Company Search",
+                message: `No ticker symbol found for "${toolArgs.query}"`
+              };
+            }
+            break;
+            
+          case "getStatement":
+            if (Array.isArray(toolResult) && toolResult.length > 0) {
+              const statementTypeMap = {
+                'income': 'Income Statement API',
+                'balance-sheet': 'Balance Sheet API', 
+                'cash-flow': 'Cash Flow API'
+              };
+              
+              processedToolResult = {
+                symbol: toolArgs.symbol,
+                statementType: toolArgs.statement,
+                period: toolArgs.period || 'annual',
+                recordsFound: toolResult.length,
+                mostRecentPeriod: toolResult[0],
+                allPeriods: toolResult.slice(0, 3), // Latest 3 periods for context
+                sourceUrl: sourceUrl,
+                toolDescription: statementTypeMap[String(toolArgs.statement) as keyof typeof statementTypeMap] || 'Financial Statement API'
+              };
+            } else {
+              processedToolResult = {
+                symbol: toolArgs.symbol,
+                statementType: toolArgs.statement,
+                sourceUrl: sourceUrl,
+                toolDescription: 'Financial Statement API',
+                error: "No financial statements found"
+              };
+            }
+            break;
+            
+          case "getQuote":
+            if (Array.isArray(toolResult) && toolResult.length > 0) {
+              processedToolResult = {
+                ...toolResult[0],
+                sourceUrl: sourceUrl,
+                toolDescription: "Stock Quote API"
+              };
+            }
+            break;
+            
+          case "searchTranscripts":
+            if (typeof toolResult === 'object' && toolResult !== null && !toolResult.error) {
+              const result = toolResult as any;
+              processedToolResult = {
+                query: result.query,
+                results: result.results,
+                totalMatches: result.totalMatches,
+                companiesSearched: result.companiesSearched,
+                transcriptsAnalyzed: result.transcriptsAnalyzed,
+                sourceUrl: sourceUrl,
+                toolDescription: "Multi-Transcript Search",
+                summary: `Found ${result.totalMatches} mentions of "${result.query.topic}" across ${result.transcriptsAnalyzed} transcripts from ${result.companiesSearched} companies`
+              };
+            } else {
+              processedToolResult = {
+                error: typeof toolResult === 'object' && toolResult !== null ? toolResult.error : 'Unknown error',
+                sourceUrl: sourceUrl,
+                toolDescription: "Multi-Transcript Search"
+              };
+            }
+            break;
+            
+          // Keep other tools as-is for now
+          default:
+            if (typeof processedToolResult === 'object' && processedToolResult !== null) {
+              processedToolResult = {
+                ...processedToolResult,
+                sourceUrl: sourceUrl,
+                toolDescription: toolName // fallback to function name
+              };
+            }
+            break;
+        }
+
+        // Store the tool response for later addition to conversation
+        toolResponses.push({
+          tool_call_id: toolCall.id,
+          role: "tool" as const,
+          content: JSON.stringify(processedToolResult, null, 2),
+        });
+
+        console.log(`📝 Processed tool: ${toolName}`);
       }
 
-      console.log(`✅ Step ${step + 1}: Tool result preview:`, 
-        typeof toolResult === 'object' && toolResult !== null 
-          ? Object.keys(toolResult).length > 0 
-            ? `Object with keys: ${Object.keys(toolResult).join(', ')}` 
-            : 'Empty object'
-          : toolResult
-      );
-
-      // Add to reasoning trace
-      const currentStep = reasoningTrace[reasoningTrace.length - 1];
-      if (currentStep && currentStep.step === toolStepCounter) {
-        // Update the current step with the result
-        currentStep.result = {
-          success: !toolResult || (typeof toolResult === 'object' && !toolResult.error),
-          preview: typeof toolResult === 'object' && toolResult !== null 
-            ? `Object with ${Object.keys(toolResult).length} keys`
-            : String(toolResult).substring(0, 100)
-        };
-      }
-
-      // =================================================================
-      // TOOL RESULT PROCESSOR - Clean up results for better parsing
-      // =================================================================
-      let processedToolResult = toolResult;
-
-      switch (toolName) {
-        case "resolveSymbol":
-          if (Array.isArray(toolResult) && toolResult.length > 0) {
-            const usExchanges = ['NASDAQ', 'NYSE', 'AMEX'];
-            let bestResult = toolResult.find(result => 
-              usExchanges.includes(result.exchange) && 
-              result.currency === 'USD' &&
-              !result.symbol.includes('.')
-            );
-            if (!bestResult) bestResult = toolResult[0];
-            
-            processedToolResult = {
-              query: toolArgs.query,
-              found: true,
-              ticker: bestResult.symbol,
-              companyName: bestResult.name,
-              exchange: bestResult.exchange,
-              currency: bestResult.currency,
-              sourceUrl: sourceUrl,
-              toolDescription: "Company Search",
-              message: `Found ticker symbol: ${bestResult.symbol} for ${bestResult.name} on ${bestResult.exchange}`
-            };
-          } else {
-            processedToolResult = {
-              query: toolArgs.query,
-              found: false,
-              sourceUrl: sourceUrl,
-              toolDescription: "Company Search",
-              message: `No ticker symbol found for "${toolArgs.query}"`
-            };
-          }
-          break;
-          
-        case "getStatement":
-          if (Array.isArray(toolResult) && toolResult.length > 0) {
-            const statementTypeMap = {
-              'income': 'Income Statement API',
-              'balance-sheet': 'Balance Sheet API', 
-              'cash-flow': 'Cash Flow API'
-            };
-            
-            processedToolResult = {
-              symbol: toolArgs.symbol,
-              statementType: toolArgs.statement,
-              period: toolArgs.period || 'annual',
-              recordsFound: toolResult.length,
-              mostRecentPeriod: toolResult[0],
-              allPeriods: toolResult.slice(0, 3), // Latest 3 periods for context
-              sourceUrl: sourceUrl,
-              toolDescription: statementTypeMap[String(toolArgs.statement) as keyof typeof statementTypeMap] || 'Financial Statement API'
-            };
-          } else {
-            processedToolResult = {
-              symbol: toolArgs.symbol,
-              statementType: toolArgs.statement,
-              sourceUrl: sourceUrl,
-              toolDescription: 'Financial Statement API',
-              error: "No financial statements found"
-            };
-          }
-          break;
-          
-        case "getQuote":
-          if (Array.isArray(toolResult) && toolResult.length > 0) {
-            processedToolResult = {
-              ...toolResult[0],
-              sourceUrl: sourceUrl,
-              toolDescription: "Stock Quote API"
-            };
-          }
-          break;
-          
-        case "searchTranscripts":
-          if (typeof toolResult === 'object' && toolResult !== null && !toolResult.error) {
-            const result = toolResult as any;
-            processedToolResult = {
-              query: result.query,
-              results: result.results,
-              totalMatches: result.totalMatches,
-              companiesSearched: result.companiesSearched,
-              transcriptsAnalyzed: result.transcriptsAnalyzed,
-              sourceUrl: sourceUrl,
-              toolDescription: "Multi-Transcript Search",
-              summary: `Found ${result.totalMatches} mentions of "${result.query.topic}" across ${result.transcriptsAnalyzed} transcripts from ${result.companiesSearched} companies`
-            };
-          } else {
-            processedToolResult = {
-              error: typeof toolResult === 'object' && toolResult !== null ? toolResult.error : 'Unknown error',
-              sourceUrl: sourceUrl,
-              toolDescription: "Multi-Transcript Search"
-            };
-          }
-          break;
-          
-        // Keep other tools as-is for now
-        default:
-          if (typeof processedToolResult === 'object' && processedToolResult !== null) {
-            processedToolResult = {
-              ...processedToolResult,
-              sourceUrl: sourceUrl,
-              toolDescription: toolName // fallback to function name
-            };
-          }
-          break;
-      }
-
-      // Add this tool interaction to the conversation history
+      // Add the assistant message with ALL tool calls
       conversationHistory.push({
         ...plannerDecision,
         role: "assistant" as const,
       });
-      conversationHistory.push({
-        tool_call_id: toolCall.id,
-        role: "tool" as const,
-        content: JSON.stringify(processedToolResult, null, 2),
-      });
 
-      console.log(`📝 Step ${step + 1}: Added tool result to conversation history`);
+      // Add ALL tool responses
+      for (const toolResponse of toolResponses) {
+        conversationHistory.push(toolResponse);
+      }
+
+      console.log(`📝 Added all tool results to conversation history`);
     }
 
     console.log(`🎯 Agent execution complete. Used tools: ${allToolsUsed.join(' → ')}`);
