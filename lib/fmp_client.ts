@@ -16,10 +16,10 @@ if (!API_KEY) {
  * @param params - An object of query parameters.
  * @returns The JSON response from the API.
  */
-async function get(endpoint: string, params: Record<string, any> = {}) {
+async function get(endpoint: string, params: Record<string, string> = {}) {
   // Build the full URL with query parameters
   const url = new URL(`${FMP_API_BASE_URL}${endpoint}`);
-  url.searchParams.append("apikey", API_KEY);
+  url.searchParams.append("apikey", API_KEY as string);
   for (const key in params) {
     if (params[key] !== undefined) { // Don't append undefined params
       url.searchParams.append(key, params[key]);
