@@ -333,7 +333,7 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
     console.log(`🎯 Agent execution complete. Used tools: ${allToolsUsed.join(' → ')}`);
 
     // =================================================================
-    // SYNTHESIZER: Create final response from conversation history
+    // SYNTHESIZER: Create streaming response from conversation history
     // =================================================================
     console.log("✍️ Final Step: Calling Synthesizer LLM...");
 
@@ -362,17 +362,56 @@ The original question was: "${userMessage.content}"`
       stream: true,
     });
 
-    let finalReply = "";
-    for await (const chunk of synthesizerResponse) {
-      finalReply += chunk.choices[0]?.delta?.content ?? "";
-    }
-    console.log("📤 Final reply from Synthesizer:", finalReply?.substring(0, 100) + "...");
+    // Create streaming response using Server-Sent Events
+    const encoder = new TextEncoder();
+    
+    const stream = new ReadableStream({
+      async start(controller) {
+        // First, send the metadata (reasoning, tools used, etc.)
+        const metadata = {
+          type: 'metadata',
+          toolsUsed: allToolsUsed,
+          stepCount: allToolsUsed.length,
+          reasoning: reasoningTrace
+        };
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(metadata)}\n\n`));
 
-    return NextResponse.json({ 
-      reply: finalReply,
-      toolsUsed: allToolsUsed,
-      stepCount: allToolsUsed.length,
-      reasoning: reasoningTrace
+        // Then stream the actual content
+        try {
+          for await (const chunk of synthesizerResponse) {
+            const content = chunk.choices[0]?.delta?.content || '';
+            if (content) {
+              const contentChunk = {
+                type: 'content',
+                content: content
+              };
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(contentChunk)}\n\n`));
+            }
+          }
+          
+          // Send completion signal
+          const completion = { type: 'done' };
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(completion)}\n\n`));
+          
+        } catch (error) {
+          console.error("Streaming error:", error);
+          const errorChunk = {
+            type: 'error',
+            error: error instanceof Error ? error.message : 'Unknown error'
+          };
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(errorChunk)}\n\n`));
+        } finally {
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
     });
 
   } catch (error) {

@@ -100,15 +100,80 @@ export default function ChatInterface() {
         throw new Error(errorData.error || `Request failed with status ${response.status}`);
       }
 
-      const data = await response.json();
+      // Handle streaming response
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
       
-      setMessages([...newMessages, { 
-        role: 'assistant', 
-        content: data.reply,
-        toolUsed: data.toolsUsed?.join(' → '),
-        reasoning: data.reasoning,
-        stepCount: data.stepCount
-      }]);
+      if (!reader) {
+        throw new Error('No reader available');
+      }
+
+      // Initialize the assistant message
+      let assistantMessage: Message = {
+        role: 'assistant',
+        content: '',
+      };
+
+      // Add empty assistant message that will be updated
+      setMessages([...newMessages, assistantMessage]);
+
+      let buffer = '';
+      
+      while (true) {
+        const { done, value } = await reader.read();
+        
+        if (done) break;
+        
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        
+        // Keep the last potentially incomplete line in the buffer
+        buffer = lines.pop() || '';
+        
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              
+              if (data.type === 'metadata') {
+                // Update assistant message with metadata and stop loading
+                assistantMessage = {
+                  ...assistantMessage,
+                  toolUsed: data.toolsUsed?.join(' → '),
+                  reasoning: data.reasoning,
+                  stepCount: data.stepCount
+                };
+                
+                setMessages(prev => [
+                  ...prev.slice(0, -1),
+                  assistantMessage
+                ]);
+                
+                // Stop loading once we start receiving content
+                setIsLoading(false);
+              } else if (data.type === 'content') {
+                // Append content to the assistant message
+                assistantMessage = {
+                  ...assistantMessage,
+                  content: assistantMessage.content + data.content
+                };
+                
+                setMessages(prev => [
+                  ...prev.slice(0, -1),
+                  assistantMessage
+                ]);
+              } else if (data.type === 'done') {
+                console.log('✅ Streaming complete');
+                break;
+              } else if (data.type === 'error') {
+                throw new Error(data.error);
+              }
+            } catch (parseError) {
+              console.error('Error parsing SSE data:', parseError);
+            }
+          }
+        }
+      }
 
     } catch (error) {
       console.error('Chat error:', error);
@@ -118,7 +183,6 @@ export default function ChatInterface() {
         role: 'assistant', 
         content: `❌ Error: ${errorMessage}` 
       }]);
-    } finally {
       setIsLoading(false);
     }
   };
