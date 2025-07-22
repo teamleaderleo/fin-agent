@@ -211,7 +211,13 @@ export default function ChatInterface() {
     "What's Apple's ticker symbol?",
     "Show me Microsoft's latest income statement",
     "CrowdStrike revenue growth over 5 years",
-    "Get Spotify's recent earnings transcript"
+    "Get Spotify's recent earnings transcript",
+    "What has Airbnb management said about profitability over the last few earnings calls?",
+    "What are Mark Zuckerberg's and Satya Nadella's recent comments about AI?",
+    "How many new large deals did ServiceNow sign in the last quarter?",
+    "What has Tesla said about autonomous driving in recent calls?",
+    "Compare Netflix and Disney's subscriber growth strategies",
+    "What is Amazon's latest guidance on AWS growth?"
   ];
 
   return (
