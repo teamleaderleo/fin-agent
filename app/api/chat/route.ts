@@ -298,7 +298,7 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
               symbols: Array.isArray(toolArgs.symbols) ? toolArgs.symbols : [toolArgs.symbols],
               topic: toolArgs.topic || "",
               executives: toolArgs.executives || [],
-              lookbackQuarters: toolArgs.lookbackQuarters || 4,
+              lookbackQuarters: toolArgs.lookbackQuarters || 2,
             };
 
             // --- Topic Expansion ---
@@ -376,8 +376,8 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
               console.log(`📊 Found ${allMentions.length} total potential mentions. Summarizing...`);
               allMentions.sort((a, b) => a.score - b.score);
 
-              // Stricter limits to guarantee staying under the token limit
-              const MAX_MENTIONS_TO_RETURN = 15;
+              // Fewer is less detail but faster
+              const MAX_MENTIONS_TO_RETURN = 5;
               const SNIPPET_LENGTH = 200;
 
               const summarizedMentions = allMentions.slice(0, MAX_MENTIONS_TO_RETURN).map(mention => ({
