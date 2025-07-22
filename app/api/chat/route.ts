@@ -359,9 +359,13 @@ The original question was: "${userMessage.content}"`
         ...conversationHistory
       ],
       temperature: 0.1,
+      stream: true,
     });
 
-    const finalReply = synthesizerResponse.choices[0].message.content;
+    let finalReply = "";
+    for await (const chunk of synthesizerResponse) {
+      finalReply += chunk.choices[0]?.delta?.content ?? "";
+    }
     console.log("📤 Final reply from Synthesizer:", finalReply?.substring(0, 100) + "...");
 
     return NextResponse.json({ 
