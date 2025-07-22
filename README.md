@@ -91,11 +91,11 @@ This architecture ensures the application is not only functional but also clean,
 
 ## A Note on API Access and Citations
 
-This application was built using the public Financial Modeling Prep (FMP) API key provided in the assignment brief. Free-tier API keys have certain limitations (e.g., full data is often only available for a small set of symbols like `AAPL` or `MSFT`).
+This application was built using the Financial Modeling Prep (FMP) API key provided in the assignment brief. However, the citations were built using the Free-tier API key given on the demo page, which has certain limitations.
 
 **Therefore, while the citation links (`🔗`) in the chat interface are programmatically correct, they may not always resolve to a page with data.**
 
-The **purpose of this feature** is to demonstrate the architectural principle of **data source transparency**. Each citation link accurately reflects the specific API endpoint the AI agent called to get its information. In a production environment with a full-access enterprise API key, these links would seamlessly connect the user to the raw data source, enhancing trust and verifiability.
+The **purpose of this feature** is to demonstrate the possibility of showcasing citation links which accurately reflect the specific API endpoint the AI agent called to get its information. In a production environment with a full-access enterprise API key, these links would seamlessly connect the user to the raw data source, enhancing trust and verifiability.
 
 ## Getting Started
 
