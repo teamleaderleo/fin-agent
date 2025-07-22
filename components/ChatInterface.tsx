@@ -17,6 +17,7 @@ export default function ChatInterface() {
   const [expandedReasoning, setExpandedReasoning] = useState<number | null>(null);
   const [copiedReasoning, setCopiedReasoning] = useState<number | null>(null);
   const [copiedMessage, setCopiedMessage] = useState<number | null>(null);
+  const [isDarkMode, setIsDarkMode] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -27,6 +28,12 @@ export default function ChatInterface() {
     setCopiedMessage(null);
     localStorage.removeItem('fin-agent-chat');
     inputRef.current?.focus();
+  };
+
+  const toggleDarkMode = () => {
+    const newDarkMode = !isDarkMode;
+    setIsDarkMode(newDarkMode);
+    localStorage.setItem('fin-agent-dark-mode', String(newDarkMode));
   };
 
   useEffect(() => {
@@ -43,8 +50,14 @@ export default function ChatInterface() {
           setMessages(parsed);
         }
       }
+      
+      // Load dark mode preference
+      const savedDarkMode = localStorage.getItem('fin-agent-dark-mode');
+      if (savedDarkMode) {
+        setIsDarkMode(savedDarkMode === 'true');
+      }
     } catch (error) {
-      console.error('Failed to load saved chat:', error);
+      console.error('Failed to load saved data:', error);
     }
   }, []);
 
@@ -256,23 +269,53 @@ export default function ChatInterface() {
   ];
 
   return (
-    <div className="flex flex-col h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+    <div className={`flex flex-col h-screen transition-colors ${
+      isDarkMode 
+        ? 'bg-gradient-to-br from-gray-900 to-gray-800' 
+        : 'bg-gradient-to-br from-gray-50 to-gray-100'
+    }`}>
       {/* Header */}
-      <div className="bg-white/80 backdrop-blur-sm border-b border-gray-200/50 px-6 py-4">
+      <div className={`backdrop-blur-sm border-b px-6 py-4 transition-colors ${
+        isDarkMode
+          ? 'bg-gray-900/80 border-gray-700/50'
+          : 'bg-white/80 border-gray-200/50'
+      }`}>
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-800">fin-agent</h1>
-            <p className="text-sm text-gray-600 mt-1">Financial data at your fingertips</p>
+            <h1 className={`text-2xl font-bold transition-colors ${
+              isDarkMode ? 'text-gray-100' : 'text-gray-800'
+            }`}>fin-agent</h1>
+            <p className={`text-sm mt-1 transition-colors ${
+              isDarkMode ? 'text-gray-400' : 'text-gray-600'
+            }`}>Financial data at your fingertips</p>
           </div>
           
-          {messages.length > 0 && (
+          <div className="flex items-center gap-2">
             <button
-              onClick={clearChat}
-              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors text-sm font-medium"
+              onClick={toggleDarkMode}
+              className={`p-2 rounded-lg transition-colors ${
+                isDarkMode
+                  ? 'bg-gray-800 hover:bg-gray-700 text-gray-300'
+                  : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+              }`}
+              title={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'}
             >
-              New Chat
+              {isDarkMode ? '☀️' : '🌙'}
             </button>
-          )}
+            
+            {messages.length > 0 && (
+              <button
+                onClick={clearChat}
+                className={`px-4 py-2 rounded-lg transition-colors text-sm font-medium ${
+                  isDarkMode
+                    ? 'bg-gray-800 hover:bg-gray-700 text-gray-300'
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                }`}
+              >
+                New Chat
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -283,8 +326,14 @@ export default function ChatInterface() {
           {/* Welcome message */}
           {messages.length === 0 && (
             <div className="text-center py-12">
-              <div className="bg-white/60 backdrop-blur-sm rounded-xl p-8 border border-gray-200/50 shadow-sm">
-                <h2 className="text-lg font-semibold text-gray-800 mb-4">
+              <div className={`backdrop-blur-sm rounded-xl p-8 border shadow-sm transition-colors ${
+                isDarkMode
+                  ? 'bg-gray-800/60 border-gray-700/50'
+                  : 'bg-white/60 border-gray-200/50'
+              }`}>
+                <h2 className={`text-lg font-semibold mb-4 transition-colors ${
+                  isDarkMode ? 'text-gray-100' : 'text-gray-800'
+                }`}>
                   Welcome! Ask me about any company's financials.
                 </h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -292,7 +341,11 @@ export default function ChatInterface() {
                     <button
                       key={idx}
                       onClick={() => setInput(query)}
-                      className="text-left p-3 bg-white/40 hover:bg-white/60 rounded-lg text-sm text-gray-700 transition-all duration-200 border border-gray-200/30 hover:border-gray-300/50"
+                      className={`text-left p-3 rounded-lg text-sm transition-all duration-200 border ${
+                        isDarkMode
+                          ? 'bg-gray-700/40 hover:bg-gray-700/60 text-gray-200 border-gray-600/30 hover:border-gray-600/50'
+                          : 'bg-white/40 hover:bg-white/60 text-gray-700 border-gray-200/30 hover:border-gray-300/50'
+                      }`}
                     >
                       "{query}"
                     </button>
@@ -379,10 +432,14 @@ export default function ChatInterface() {
                 )}
 
                 {/* Main Message Content */}
-                <div className={`rounded-2xl px-4 py-3 relative ${
+                <div className={`rounded-2xl px-4 py-3 relative shadow-sm transition-colors ${
                   msg.role === 'user' 
-                    ? 'bg-gray-800 text-white shadow-sm' 
-                    : 'bg-white/60 backdrop-blur-sm border border-gray-200/50 text-gray-800 shadow-sm'
+                    ? isDarkMode 
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-800 text-white'
+                    : isDarkMode
+                      ? 'bg-gray-800/60 backdrop-blur-sm border border-gray-700/50 text-gray-100'
+                      : 'bg-white/60 backdrop-blur-sm border border-gray-200/50 text-gray-800'
                 }`}>
                   <div 
                     className="whitespace-pre-wrap"
@@ -391,7 +448,9 @@ export default function ChatInterface() {
                     }}
                   />
                   {msg.toolUsed && (
-                    <div className="text-xs text-gray-500 mt-2 font-mono">
+                    <div className={`text-xs mt-2 font-mono transition-colors ${
+                      isDarkMode ? 'text-gray-400' : 'text-gray-500'
+                    }`}>
                       🔧 Used: {msg.toolUsed}
                     </div>
                   )}
@@ -400,7 +459,11 @@ export default function ChatInterface() {
                   {msg.role === 'assistant' && (
                     <button
                       onClick={() => copyMessage(idx, msg.content)}
-                      className="absolute bottom-2 right-2 p-1 text-xs bg-white/80 hover:bg-white rounded transition-colors opacity-60 hover:opacity-100 shadow-sm"
+                      className={`absolute bottom-2 right-2 p-1 text-xs rounded transition-colors shadow-sm opacity-60 hover:opacity-100 ${
+                        isDarkMode
+                          ? 'bg-gray-700/80 hover:bg-gray-700 text-gray-300'
+                          : 'bg-white/80 hover:bg-white text-gray-700'
+                      }`}
                       title="Copy message"
                     >
                       {copiedMessage === idx ? '✓' : '📋'}
@@ -428,7 +491,11 @@ export default function ChatInterface() {
       </div>
 
       {/* Input */}
-      <div className="bg-white/80 backdrop-blur-sm border-t border-gray-200/50 px-6 py-4">
+      <div className={`backdrop-blur-sm border-t px-6 py-4 transition-colors ${
+        isDarkMode
+          ? 'bg-gray-900/80 border-gray-700/50'
+          : 'bg-white/80 border-gray-200/50'
+      }`}>
         <form onSubmit={handleSubmit} className="max-w-4xl mx-auto">
           <div className="flex space-x-3">
             <input
@@ -437,13 +504,25 @@ export default function ChatInterface() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="Ask about any company's financials..."
-              className="flex-1 px-4 py-3 bg-white/60 backdrop-blur-sm border border-gray-200/50 rounded-xl focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none text-gray-800 placeholder-gray-500"
+              className={`flex-1 px-4 py-3 backdrop-blur-sm border rounded-xl focus:ring-2 focus:border-transparent outline-none transition-colors ${
+                isDarkMode
+                  ? 'bg-gray-800/60 border-gray-700/50 text-gray-100 placeholder-gray-400 focus:ring-blue-500'
+                  : 'bg-white/60 border-gray-200/50 text-gray-800 placeholder-gray-500 focus:ring-gray-400'
+              }`}
               disabled={isLoading}
             />
             <button
               type="submit"
               disabled={!input.trim() || isLoading}
-              className="px-6 py-3 bg-gray-800 text-white rounded-xl hover:bg-gray-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-all duration-200 font-medium shadow-sm"
+              className={`px-6 py-3 rounded-xl font-medium shadow-sm transition-all duration-200 ${
+                !input.trim() || isLoading
+                  ? isDarkMode
+                    ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
+                    : 'bg-gray-400 text-gray-300 cursor-not-allowed'
+                  : isDarkMode
+                    ? 'bg-blue-600 text-white hover:bg-blue-700'
+                    : 'bg-gray-800 text-white hover:bg-gray-700'
+              }`}
             >
               {isLoading ? '...' : 'Send'}
             </button>
