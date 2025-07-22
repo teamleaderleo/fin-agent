@@ -346,21 +346,19 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
               }
               
               // Get the most recent quarters (up to lookbackQuarters)
-              const recentDates = transcriptDatesResult
-                .slice(0, lookbackQuarters)
-                .filter(item => item.year && item.quarter);
+              const recentDates = transcriptDatesResult.slice(0, lookbackQuarters);
               
               console.log(`📅 Found ${recentDates.length} recent quarters for ${symbol}`);
               
               // Fetch and search each transcript
               for (const dateInfo of recentDates) {
                 try {
-                  console.log(`📄 Fetching ${symbol} Q${dateInfo.quarter} ${dateInfo.year} transcript`);
+                  console.log(`📄 Fetching ${symbol} transcript for:`, dateInfo);
                   
                   const transcriptResult = await fmpClient.get("/earning-call-transcript", {
                     symbol: symbol,
-                    year: dateInfo.year.toString(),
-                    quarter: dateInfo.quarter.toString()
+                    year: dateInfo.year ? dateInfo.year.toString() : dateInfo.year,
+                    quarter: dateInfo.quarter ? dateInfo.quarter.toString() : dateInfo.quarter
                   });
                   
                   if (Array.isArray(transcriptResult) && transcriptResult.length > 0) {
@@ -381,7 +379,7 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
                     }
                   }
                 } catch (transcriptError) {
-                  console.log(`⚠️ Error fetching transcript for ${symbol} Q${dateInfo.quarter} ${dateInfo.year}:`, transcriptError);
+                  console.log(`⚠️ Error fetching transcript for ${symbol}:`, transcriptError);
                 }
               }
             }
