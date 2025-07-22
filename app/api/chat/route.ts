@@ -78,9 +78,10 @@ Use tools whenever the user asks about specific companies or financial data.`
         console.log("🔍 Resolving symbol for:", toolArgs.query);
         
         // Use search-name endpoint for company names, not search-symbol
+        // Get more results to find the best match
         toolResult = await fmpClient.get("/search-name", { 
           query: toolArgs.query,
-          limit: "1" 
+          limit: "10" // Get multiple results to choose the best one
         });
         
         console.log("🔍 Raw resolveSymbol result:", toolResult);
@@ -172,15 +173,32 @@ Use tools whenever the user asks about specific companies or financial data.`
     switch (toolName) {
       case "resolveSymbol":
         if (Array.isArray(toolResult) && toolResult.length > 0) {
-          const firstResult = toolResult[0];
+          // Prefer US exchanges (NASDAQ, NYSE, AMEX) over foreign exchanges
+          const usExchanges = ['NASDAQ', 'NYSE', 'AMEX'];
+          
+          // Look for a US exchange listing first
+          let bestResult = toolResult.find(result => 
+            usExchanges.includes(result.exchange) && 
+            result.currency === 'USD' &&
+            !result.symbol.includes('.') // Avoid symbols with dots (foreign listings)
+          );
+          
+          // Fall back to first result if no US listing found
+          if (!bestResult) {
+            bestResult = toolResult[0];
+          }
+          
+          console.log("🎯 Selected best result:", bestResult);
+          
           processedToolResult = {
             query: toolArgs.query,
             found: true,
-            ticker: firstResult.symbol,
-            companyName: firstResult.name,
-            exchange: firstResult.exchange,
-            currency: firstResult.currency,
-            message: `Found ticker symbol: ${firstResult.symbol} for ${firstResult.name}`
+            ticker: bestResult.symbol,
+            companyName: bestResult.name,
+            exchange: bestResult.exchange,
+            currency: bestResult.currency,
+            totalResultsFound: toolResult.length,
+            message: `Found ticker symbol: ${bestResult.symbol} for ${bestResult.name} on ${bestResult.exchange}`
           };
         } else if (Array.isArray(toolResult) && toolResult.length === 0) {
           processedToolResult = {
