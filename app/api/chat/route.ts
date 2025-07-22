@@ -310,22 +310,20 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
                   model: "gpt-4.1-mini",
                   messages: [{
                     role: "system",
-                    content: "You are a financial research assistant. Your task is to expand a given search topic into a list of related keywords, synonyms, and specific product/technology names relevant for searching in earnings call transcripts. Be concise. Respond with only a JSON object containing a single key 'topics' with an array of strings."
+                    content: "You are a research assistant. Expand the given topic into a list of related keywords and product names for searching financial transcripts. Be concise. Respond with only a JSON object: {\"topics\": [\"<keyword1>\", \"<keyword2>\"]}"
                   }, {
                     role: "user",
                     content: `Topic: "${topic}"`
                   }],
                   response_format: { type: "json_object" },
-                  temperature: 0.2,
+                  temperature: 0.1,
                 });
                 const expansionResult = JSON.parse(topicExpansionResponse.choices[0].message.content || '{}');
                 if (expansionResult.topics && Array.isArray(expansionResult.topics)) {
                   expandedTopics = [...new Set([topic, ...expansionResult.topics])];
                   console.log(`✅ Expanded topics to: [${expandedTopics.join(', ')}]`);
                 }
-              } catch (expansionError) {
-                console.error("⚠️ Failed to expand topic, continuing with original:", expansionError);
-              }
+              } catch (expansionError) { console.error("⚠️ Failed to expand topic, continuing with original:", expansionError); }
             }
             
             sourceUrl = symbols.length === 1 
