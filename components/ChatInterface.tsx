@@ -25,11 +25,38 @@ export default function ChatInterface() {
     setExpandedReasoning(null);
     setCopiedReasoning(null);
     setCopiedMessage(null);
+    localStorage.removeItem('fin-agent-chat');
     inputRef.current?.focus();
   };
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  // Load chat from localStorage on mount
+  useEffect(() => {
+    try {
+      const savedMessages = localStorage.getItem('fin-agent-chat');
+      if (savedMessages) {
+        const parsed = JSON.parse(savedMessages);
+        if (Array.isArray(parsed)) {
+          setMessages(parsed);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load saved chat:', error);
+    }
+  }, []);
+
+  // Save chat to localStorage whenever messages change
+  useEffect(() => {
+    if (messages.length > 0) {
+      try {
+        localStorage.setItem('fin-agent-chat', JSON.stringify(messages));
+      } catch (error) {
+        console.error('Failed to save chat:', error);
+      }
+    }
   }, [messages]);
 
   useEffect(() => {
