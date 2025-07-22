@@ -1,0 +1,216 @@
+// app/api/chat/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import { fmpFunctions } from "@/lib/fmp_tools";
+import { openai } from "@/lib/openai_client";
+import { fmpClient } from "@/lib/fmp_client";
+
+// Convert our tool definitions to OpenAI format
+const openaiTools = fmpFunctions.map(tool => ({
+  type: "function" as const,
+  function: {
+    name: tool.name,
+    description: tool.description,
+    parameters: tool.parameters,
+  }
+}));
+
+export async function POST(req: NextRequest) {
+  try {
+    const { messages } = await req.json();
+    
+    if (!messages || messages.length === 0) {
+      return NextResponse.json({ error: 'Messages are required' }, { status: 400 });
+    }
+
+    const userMessage = messages[messages.length - 1];
+    console.log("📥 Received user message:", userMessage.content);
+
+    // =================================================================
+    // 1. PLANNER: Decide which tool to use (if any)
+    // =================================================================
+    console.log("🧠 Step 1: Calling Planner LLM...");
+    
+    const plannerResponse = await openai.chat.completions.create({
+      model: "gpt-4.1-mini",
+      messages: [
+        {
+          role: "system",
+          content: `You are a financial analyst assistant. The user will ask questions about companies and their finances.
+
+You have access to tools to gather financial data. Think step by step:
+1. First, you typically need to resolve company names to ticker symbols using resolveSymbol
+2. Then use the appropriate tools to get the requested data
+3. Choose the most direct tools for the user's question
+
+Use tools whenever the user asks about specific companies or financial data.`
+        },
+        ...messages
+      ],
+      tools: openaiTools,
+      tool_choice: "auto",
+      temperature: 0.1,
+    });
+
+    const plannerDecision = plannerResponse.choices[0].message;
+
+    // Check if the model decided to call a tool
+    if (!plannerDecision.tool_calls || plannerDecision.tool_calls.length === 0) {
+      console.log("💭 Planner decided no tool needed. Responding directly.");
+      return NextResponse.json({ 
+        reply: plannerDecision.content || "I'm not sure how to help with that. Can you ask about a specific company's financial data?"
+      });
+    }
+
+    // =================================================================
+    // 2. EXECUTOR: Execute the chosen tool(s)
+    // =================================================================
+    const toolCall = plannerDecision.tool_calls[0]; // Start with first tool call
+    const toolName = toolCall.function.name;
+    const toolArgs = JSON.parse(toolCall.function.arguments);
+
+    console.log(`🚀 Step 2: Executing tool '${toolName}' with args:`, toolArgs);
+
+    let toolResult: unknown;
+
+    // Execute the tool based on its name
+    switch (toolName) {
+      case "resolveSymbol":
+        toolResult = await fmpClient.get("/search-symbol", { 
+          query: toolArgs.query,
+          limit: "1" 
+        });
+        break;
+
+      case "listTranscriptDates":
+        toolResult = await fmpClient.get("/earning-call-transcript-dates", { 
+          symbol: toolArgs.symbol 
+        });
+        break;
+
+      case "getTranscript":
+        toolResult = await fmpClient.get("/earning-call-transcript", {
+          symbol: toolArgs.symbol,
+          year: toolArgs.year,
+          quarter: toolArgs.quarter
+        });
+        break;
+
+      case "getStatement":
+        const statementEndpoint = `/${toolArgs.statement}-statement`;
+        toolResult = await fmpClient.get(statementEndpoint, {
+          symbol: toolArgs.symbol,
+          period: toolArgs.period || 'annual',
+          limit: toolArgs.limit || 5
+        });
+        break;
+
+      case "getFinancialGrowth":
+        // Get the raw growth data from FMP
+        toolResult = await fmpClient.get("/financial-growth", {
+          symbol: toolArgs.symbol,
+          period: toolArgs.period || 'annual',
+          limit: (Math.max(...(toolArgs.years || [10])) + 1).toString() // Get enough years
+        });
+        
+        // Add metadata about what was requested
+        toolResult = {
+          symbol: toolArgs.symbol,
+          metric: toolArgs.metric,
+          requestedYears: toolArgs.years,
+          rawData: toolResult
+        };
+        break;
+
+      case "getKeyMetrics":
+        toolResult = await fmpClient.get("/key-metrics", {
+          symbol: toolArgs.symbol,
+          period: 'annual',
+          limit: toolArgs.limit || 5
+        });
+        break;
+
+      case "searchNews":
+        const symbolsString = Array.isArray(toolArgs.symbols) 
+          ? toolArgs.symbols.join(',') 
+          : toolArgs.symbols;
+        toolResult = await fmpClient.get("/news/stock", {
+          symbols: symbolsString,
+          limit: toolArgs.limit || 20
+        });
+        break;
+
+      case "getQuote":
+        toolResult = await fmpClient.get("/quote", { 
+          symbol: toolArgs.symbol 
+        });
+        break;
+
+      case "searchTranscripts":
+        // For now, return a placeholder - we'll implement this meta-function later
+        toolResult = {
+          error: "searchTranscripts not yet implemented",
+          suggestion: "Try asking about a specific earnings call using getTranscript"
+        };
+        break;
+
+      default:
+        console.error(`❌ Unknown tool called: ${toolName}`);
+        toolResult = { error: `Unknown tool: ${toolName}` };
+    }
+
+    console.log("✅ Tool execution result:", toolResult);
+
+    // =================================================================
+    // 3. SYNTHESIZER: Respond to the user based on the tool's result
+    // =================================================================
+    console.log("✍️ Step 3: Calling Synthesizer LLM...");
+
+    // Add the tool call and its result to the message history
+    const messagesWithToolResult = [
+      ...messages,
+      plannerDecision, // The message with the tool call
+      {
+        tool_call_id: toolCall.id,
+        role: "tool" as const,
+        name: toolName,
+        content: JSON.stringify(toolResult),
+      },
+    ];
+
+    const synthesizerResponse = await openai.chat.completions.create({
+      model: "gpt-4.1-mini",
+      messages: [
+        {
+          role: "system",
+          content: `You are a financial analyst. Answer the user's question using ONLY the data provided in the tool result.
+
+Rules:
+- Be concise and direct
+- For every fact or number you mention, cite the source in brackets like [${toolName}]
+- If data is missing or has errors, explain that clearly
+- Don't make up information not in the provided data
+- Format financial numbers clearly (e.g., $5.8B, 15.2%)
+
+The original question was: "${userMessage.content}"`
+        },
+        ...messagesWithToolResult
+      ],
+      temperature: 0.1,
+    });
+
+    const finalReply = synthesizerResponse.choices[0].message.content;
+    console.log("📤 Final reply from Synthesizer:", finalReply);
+
+    return NextResponse.json({ 
+      reply: finalReply,
+      toolUsed: toolName
+    });
+
+  } catch (error) {
+    console.error("💥 Error in chat route:", error);
+    return NextResponse.json(
+      { error: "An error occurred while processing your request" }, 
+      { status: 500 }
+    );
+  }
+}
