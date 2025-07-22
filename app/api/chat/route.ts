@@ -346,13 +346,20 @@ Available tools: ${fmpFunctions.map(f => f.name).join(', ')}`
 
 Rules:
 - Be comprehensive and include all relevant financial details from the data
-- For each tool used, cite it using the toolDescription and sourceUrl from the tool results
-- Use this EXACT citation format: [[toolDescription](sourceUrl)]
+- For EVERY tool used, you must cite it using the toolDescription and sourceUrl from the tool results
+- Use this EXACT citation format for EVERY citation: [[toolDescription](sourceUrl)]
+- NEVER use single brackets [text](url) - ALWAYS use double brackets [[text](url)]
 - If data is missing or has errors, explain that clearly
 - Don't make up information not in the provided data
 - Format financial numbers clearly (e.g., $5.8B, 15.2%)
 
-CRITICAL: Look for "toolDescription" and "sourceUrl" fields in the tool results and use them for citations.
+CITATION REQUIREMENTS:
+- If you used resolveSymbol: [[Company Search](sourceUrl)]
+- If you used getStatement: [[Income Statement API](sourceUrl)] or [[Balance Sheet API](sourceUrl)]
+- If you used getTranscript: [[getTranscript](sourceUrl)]
+- If you used listTranscriptDates: [[listTranscriptDates](sourceUrl)]
+- If you used getFinancialGrowth: [[getFinancialGrowth](sourceUrl)]
+- ALWAYS double brackets [[]] - never single brackets []
 
 The original question was: "${userMessage.content}"`
         },
