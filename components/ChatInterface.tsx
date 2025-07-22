@@ -20,6 +20,14 @@ export default function ChatInterface() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const clearChat = () => {
+    setMessages([]);
+    setExpandedReasoning(null);
+    setCopiedReasoning(null);
+    setCopiedMessage(null);
+    inputRef.current?.focus();
+  };
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -224,9 +232,20 @@ export default function ChatInterface() {
     <div className="flex flex-col h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       {/* Header */}
       <div className="bg-white/80 backdrop-blur-sm border-b border-gray-200/50 px-6 py-4">
-        <div className="max-w-4xl mx-auto">
-          <h1 className="text-2xl font-bold text-gray-800">fin-agent</h1>
-          <p className="text-sm text-gray-600 mt-1">Financial data at your fingertips</p>
+        <div className="max-w-4xl mx-auto flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-800">fin-agent</h1>
+            <p className="text-sm text-gray-600 mt-1">Financial data at your fingertips</p>
+          </div>
+          
+          {messages.length > 0 && (
+            <button
+              onClick={clearChat}
+              className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors text-sm font-medium"
+            >
+              New Chat
+            </button>
+          )}
         </div>
       </div>
 
@@ -357,7 +376,7 @@ export default function ChatInterface() {
                       className="absolute bottom-2 right-2 p-1 text-xs bg-white/80 hover:bg-white rounded transition-colors opacity-60 hover:opacity-100 shadow-sm"
                       title="Copy message"
                     >
-                      {copiedMessage === idx ? '✓' : '📋 Copy'}
+                      {copiedMessage === idx ? '✓' : '📋'}
                     </button>
                   )}
                 </div>
